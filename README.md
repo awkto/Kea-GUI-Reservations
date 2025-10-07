@@ -117,9 +117,31 @@ Visit `http://localhost:5000`
 
 ## Running with Docker
 
+### Using Pre-built Image (Recommended)
+
+```bash
+# Pull the latest image
+docker pull awkto/kea-gui-reservations:latest
+
+# Run with your config
+docker run -d \
+  --name kea-gui \
+  -p 5000:5000 \
+  -v $(pwd)/config.yaml:/app/config/config.yaml:ro \
+  awkto/kea-gui-reservations:latest
+```
+
+### Building from Source
+
 ```bash
 docker build -t kea-gui .
 docker run -p 5000:5000 -v $(pwd)/config.yaml:/app/config.yaml kea-gui
+```
+
+### Using Docker Compose
+
+```bash
+docker-compose up -d
 ```
 
 ## API Endpoints
@@ -143,6 +165,12 @@ docker run -p 5000:5000 -v $(pwd)/config.yaml:/app/config.yaml kea-gui
 - Secure your KEA Control Agent with authentication
 - Run container with appropriate user permissions
 - Consider network isolation
+
+## CI/CD
+
+This project includes GitHub Actions for automated Docker image builds. See [CICD_SETUP.md](CICD_SETUP.md) for setup instructions.
+
+Docker images are automatically published to Docker Hub on tagged releases.
 
 ## License
 
