@@ -1,0 +1,22 @@
+# KEA DHCP Server Configuration
+kea:
+  # KEA Control Agent URL (default port is 8000)
+  control_agent_url: "http://localhost:8000"
+  
+  # Optional: Basic authentication for KEA Control Agent
+  username: ""
+  password: ""
+  
+  # Subnet ID for DHCPv4 (you can make this configurable per request)
+  default_subnet_id: 1
+
+# Flask Application Settings
+app:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

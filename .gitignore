@@ -44,4 +44,4 @@ Thumbs.db
 .env.local
 
 # Config (if contains sensitive data)
-# config.yaml
+config.yaml
