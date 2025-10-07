@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  kea-gui:
+    build: .
+    container_name: kea-lease-manager
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config.yaml:/app/config/config.yaml:ro
+    restart: unless-stopped
+    environment:
+      - CONFIG_PATH=/app/config/config.yaml
+    networks:
+      - kea-network
+
+networks:
+  kea-network:
+    driver: bridge
