@@ -104,7 +104,28 @@
                 <p class="mt-2">Loading leases...</p>
             </div>
 
-            <div id="error-message" class="alert alert-danger" style="display: none;"></div>
+            <div id="error-message" class="alert alert-danger" style="display: none;">
+                <h5><i class="bi bi-exclamation-triangle"></i> Error Loading Leases</h5>
+                <p id="error-text"></p>
+                <div id="setup-help" style="display: none;" class="mt-3">
+                    <strong>Solution:</strong> Enable the KEA lease_cmds hook library
+                    <ol class="mt-2 mb-0">
+                        <li>Edit your KEA configuration file (usually <code>/etc/kea/kea-dhcp4.conf</code>)</li>
+                        <li>Add the lease_cmds hook library:
+                            <pre class="bg-dark text-light p-2 mt-2"><code>"hooks-libraries": [
+  {
+    "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so"
+  }
+]</code></pre>
+                        </li>
+                        <li>Restart KEA: <code>sudo systemctl restart kea-dhcp4-server kea-ctrl-agent</code></li>
+                    </ol>
+                    <a href="https://github.com/awkto/Kea-GUI-Reservations/blob/main/KEA_SETUP_GUIDE.md" 
+                       target="_blank" class="btn btn-sm btn-primary mt-2">
+                        <i class="bi bi-book"></i> View Full Setup Guide
+                    </a>
+                </div>
+            </div>
 
             <div id="leases-table-container" style="display: none;">
                 <div class="table-responsive">
@@ -285,7 +306,20 @@
                 }
             } catch (error) {
                 loading.style.display = 'none';
-                errorMsg.textContent = `Error: ${error.message}`;
+                const errorText = document.getElementById('error-text');
+                const setupHelp = document.getElementById('setup-help');
+                
+                errorText.textContent = error.message;
+                
+                // Show setup help if it's a lease command issue
+                if (error.message.includes('lease4-get') || 
+                    error.message.includes('not supported') ||
+                    error.message.includes('hook library')) {
+                    setupHelp.style.display = 'block';
+                } else {
+                    setupHelp.style.display = 'none';
+                }
+                
                 errorMsg.style.display = 'block';
             }
         }

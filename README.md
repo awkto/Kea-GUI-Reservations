@@ -19,7 +19,71 @@ A web-based GUI for promoting KEA DHCP leases to permanent reservations.
 ## Prerequisites
 
 - KEA DHCP server with Control Agent enabled
+- **KEA Lease Commands Hook Library** (required for viewing leases)
 - Docker (for containerized deployment)
+
+## KEA Configuration Requirements
+
+### 1. Enable Control Agent
+
+Your KEA server must have the Control Agent running. Add this to your KEA configuration (`/etc/kea/kea-ctrl-agent.conf`):
+
+```json
+{
+  "Control-agent": {
+    "http-host": "0.0.0.0",
+    "http-port": 8000,
+    "control-sockets": {
+      "dhcp4": {
+        "socket-type": "unix",
+        "socket-name": "/tmp/kea4-ctrl-socket"
+      }
+    }
+  }
+}
+```
+
+### 2. Enable Lease Commands Hook Library (REQUIRED)
+
+**This is essential for the GUI to fetch and display leases!**
+
+Edit your DHCPv4 configuration (`/etc/kea/kea-dhcp4.conf`) and add the hooks library:
+
+```json
+{
+  "Dhcp4": {
+    "hooks-libraries": [
+      {
+        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so"
+      }
+    ],
+    // ... rest of your configuration
+  }
+}
+```
+
+**Common hook library paths:**
+- **Debian/Ubuntu**: `/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so`
+- **CentOS/RHEL**: `/usr/lib64/kea/hooks/libdhcp_lease_cmds.so`
+- **FreeBSD**: `/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so`
+- **Alpine Linux**: `/usr/lib/kea/hooks/libdhcp_lease_cmds.so`
+
+After modifying the configuration, restart KEA:
+
+```bash
+sudo systemctl restart kea-dhcp4-server
+sudo systemctl restart kea-ctrl-agent
+```
+
+**To verify it's working:**
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"command": "list-commands", "service": ["dhcp4"]}' \
+  http://localhost:8000
+
+# You should see "lease4-get-all" and "lease4-get-page" in the output
+```
 
 ## Configuration
 
