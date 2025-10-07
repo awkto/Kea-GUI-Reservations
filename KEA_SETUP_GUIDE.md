@@ -1,10 +1,18 @@
 # KEA Setup Guide for Lease Management GUI
 
-## Problem: No Leases Showing in GUI
+## Problem: No Leases Showing or Cannot Promote
 
-If you're seeing "No leases found" or errors like `'lease4-get-all' command not supported`, it means the **lease_cmds hook library** is not enabled in your KEA configuration.
+If you're seeing errors like:
+- "No leases found" or `'lease4-get-all' command not supported` 
+- `'reservation-add' command not supported`
 
-## Solution: Enable the lease_cmds Hook Library
+It means the required **hook libraries** are not enabled in your KEA configuration.
+
+## Solution: Enable Required Hook Libraries
+
+You need **two** hook libraries:
+1. **lease_cmds** - Enables viewing and managing leases
+2. **host_cmds** - Enables creating and managing reservations
 
 ### Step 1: Locate Your KEA Configuration File
 
@@ -13,30 +21,39 @@ Find your KEA DHCPv4 configuration file (usually one of these):
 - `/etc/kea/kea.conf`
 - `/usr/local/etc/kea/kea-dhcp4.conf`
 
-### Step 2: Find the Hook Library File
+### Step 2: Find the Hook Library Files
 
-The hook library is typically installed with KEA. Find it using:
+The hook libraries are typically installed with KEA. Find them using:
 
 ```bash
 # On Linux
-find /usr -name "libdhcp_lease_cmds.so" 2>/dev/null
+find /usr -name "libdhcp_*_cmds.so" 2>/dev/null
 
 # Common locations:
-# Debian/Ubuntu:  /usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so
-# CentOS/RHEL:    /usr/lib64/kea/hooks/libdhcp_lease_cmds.so
-# FreeBSD:        /usr/local/lib/kea/hooks/libdhcp_lease_cmds.so
+# Debian/Ubuntu:  /usr/lib/x86_64-linux-gnu/kea/hooks/
+# CentOS/RHEL:    /usr/lib64/kea/hooks/
+# FreeBSD:        /usr/local/lib/kea/hooks/
 ```
+
+You need:
+- `libdhcp_lease_cmds.so` (for viewing leases)
+- `libdhcp_host_cmds.so` (for managing reservations)
 
 ### Step 3: Edit KEA Configuration
 
-Open your `kea-dhcp4.conf` file and add the `hooks-libraries` section:
+Open your `kea-dhcp4.conf` file and add **both** hook libraries:
 
 ```json
 {
   "Dhcp4": {
     "hooks-libraries": [
       {
-        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so"
+        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so",
+        "parameters": {}
+      },
+      {
+        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_host_cmds.so",
+        "parameters": {}
       }
     ],
     
@@ -91,6 +108,11 @@ You should see these commands in the output:
 - `lease4-del`
 - `lease4-update`
 - `lease4-wipe`
+- `reservation-add`
+- `reservation-del`
+- `reservation-get`
+- `reservation-get-all`
+- `reservation-get-page`
 
 ### Step 6: Test Lease Retrieval
 

@@ -2,7 +2,9 @@
 
 ## The Issue
 
-Your KEA server (version 2.2.0) doesn't have the `lease_cmds` hook library loaded, which is required for the GUI to fetch and display DHCP leases via the API.
+Your KEA server (version 2.2.0) needs the `lease_cmds` hook library to view DHCP leases.
+
+**Note**: The `host_cmds` library (for reservation management) is not installed on your system, but the GUI will use a fallback method to manage reservations via configuration updates.
 
 ## The Fix
 
@@ -13,16 +15,14 @@ You need to enable the KEA lease commands hook library. Here's how:
 On your KEA server, run:
 
 ```bash
-find /usr -name "libdhcp_lease_cmds.so" 2>/dev/null
+ls -la /usr/lib/x86_64-linux-gnu/kea/hooks/
 ```
 
-Common locations:
-- Ubuntu/Debian: `/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so`
-- CentOS/RHEL: `/usr/lib64/kea/hooks/libdhcp_lease_cmds.so`
+You should see `libdhcp_lease_cmds.so`.
 
 ### 2. Edit KEA Configuration
 
-Edit `/etc/kea/kea-dhcp4.conf` and add this section (adjust the path if needed):
+Edit `/etc/kea/kea-dhcp4.conf` and add this section:
 
 ```json
 {
@@ -37,6 +37,8 @@ Edit `/etc/kea/kea-dhcp4.conf` and add this section (adjust the path if needed):
   }
 }
 ```
+
+**Important**: Only add `libdhcp_lease_cmds.so`. Do NOT add `libdhcp_host_cmds.so` as it's not installed on your system.
 
 ### 3. Restart KEA
 
@@ -57,7 +59,14 @@ Look for `lease4-get-all` in the output.
 
 ### 5. Refresh the GUI
 
-Restart your Python app and refresh your browser. Leases should now appear!
+Restart your Python app and refresh your browser. You should now be able to:
+- ✅ View all active leases
+- ✅ Promote leases to reservations (using config-set fallback method)
+- ✅ View existing reservations
+
+## About Reservation Management
+
+Since `libdhcp_host_cmds.so` is not available on your system (it may be a premium feature or not included in your KEA package), the GUI will automatically use an alternative method to create reservations by updating the configuration via the `config-set` command.
 
 ## Alternative: If Hook Library Isn't Installed
 

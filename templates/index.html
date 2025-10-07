@@ -434,15 +434,21 @@
                     
                     // Show success message
                     const alert = document.createElement('div');
-                    alert.className = 'alert alert-success alert-dismissible fade show';
+                    alert.className = 'alert alert-success alert-dismissible fade show mt-3';
                     alert.innerHTML = `
                         <i class="bi bi-check-circle"></i> ${data.message}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     `;
-                    document.querySelector('.container-fluid').insertBefore(
-                        alert, 
-                        document.querySelector('.row')
-                    );
+                    
+                    // Insert at the top of the container
+                    const container = document.querySelector('.container-fluid');
+                    const firstChild = container.firstChild;
+                    container.insertBefore(alert, firstChild);
+                    
+                    // Auto-dismiss after 5 seconds
+                    setTimeout(() => {
+                        alert.remove();
+                    }, 5000);
                     
                     // Refresh leases
                     setTimeout(() => loadLeases(), 1000);
@@ -450,6 +456,7 @@
                     throw new Error(data.error || 'Failed to promote lease');
                 }
             } catch (error) {
+                promoteModal.hide();
                 alert(`Error: ${error.message}`);
             }
         }

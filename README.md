@@ -19,7 +19,9 @@ A web-based GUI for promoting KEA DHCP leases to permanent reservations.
 ## Prerequisites
 
 - KEA DHCP server with Control Agent enabled
-- **KEA Lease Commands Hook Library** (required for viewing leases)
+- **KEA Hook Libraries** (required):
+  - `lease_cmds` - For viewing leases
+  - `host_cmds` - For creating/managing reservations
 - Docker (for containerized deployment)
 
 ## KEA Configuration Requirements
@@ -43,18 +45,23 @@ Your KEA server must have the Control Agent running. Add this to your KEA config
 }
 ```
 
-### 2. Enable Lease Commands Hook Library (REQUIRED)
+### 2. Enable Required Hook Libraries (CRITICAL)
 
-**This is essential for the GUI to fetch and display leases!**
+**Both of these libraries are essential for the GUI to work!**
 
-Edit your DHCPv4 configuration (`/etc/kea/kea-dhcp4.conf`) and add the hooks library:
+Edit your DHCPv4 configuration (`/etc/kea/kea-dhcp4.conf`) and add both hook libraries:
 
 ```json
 {
   "Dhcp4": {
     "hooks-libraries": [
       {
-        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so"
+        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so",
+        "parameters": {}
+      },
+      {
+        "library": "/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_host_cmds.so",
+        "parameters": {}
       }
     ],
     // ... rest of your configuration
@@ -63,10 +70,10 @@ Edit your DHCPv4 configuration (`/etc/kea/kea-dhcp4.conf`) and add the hooks lib
 ```
 
 **Common hook library paths:**
-- **Debian/Ubuntu**: `/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_lease_cmds.so`
-- **CentOS/RHEL**: `/usr/lib64/kea/hooks/libdhcp_lease_cmds.so`
-- **FreeBSD**: `/usr/local/lib/kea/hooks/libdhcp_lease_cmds.so`
-- **Alpine Linux**: `/usr/lib/kea/hooks/libdhcp_lease_cmds.so`
+- **Debian/Ubuntu**: `/usr/lib/x86_64-linux-gnu/kea/hooks/libdhcp_*.so`
+- **CentOS/RHEL**: `/usr/lib64/kea/hooks/libdhcp_*.so`
+- **FreeBSD**: `/usr/local/lib/kea/hooks/libdhcp_*.so`
+- **Alpine Linux**: `/usr/lib/kea/hooks/libdhcp_*.so`
 
 After modifying the configuration, restart KEA:
 
@@ -82,7 +89,9 @@ curl -X POST -H "Content-Type: application/json" \
   -d '{"command": "list-commands", "service": ["dhcp4"]}' \
   http://localhost:8000
 
-# You should see "lease4-get-all" and "lease4-get-page" in the output
+# You should see these commands:
+# - lease4-get-all (from lease_cmds)
+# - reservation-add (from host_cmds)
 ```
 
 ## Configuration

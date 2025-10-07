@@ -65,28 +65,38 @@ class KeaClient:
             )
             response.raise_for_status()
             result = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to communicate with KEA: {e}")
+            raise Exception(f"Failed to communicate with KEA server: {e}")
+        
+        # Check if command was successful
+        if isinstance(result, list) and len(result) > 0:
+            result_code = result[0].get('result', 0)
+            error_msg = result[0].get('text', 'Unknown error')
             
-            # Check if command was successful
-            if isinstance(result, list) and len(result) > 0:
-                result_code = result[0].get('result', 0)
-                error_msg = result[0].get('text', 'Unknown error')
-                
-                # Result code 2 = command not supported
-                if result_code == 2:
+            logger.info(f"KEA response for {command}: result_code={result_code}, msg={error_msg}")
+            
+            # Result code 2 = command not supported
+            if result_code == 2:
+                logger.info(f"Command {command} not supported (result code 2)")
+                if raise_on_unsupported:
+                    raise CommandNotSupportedException(f"Command '{command}' not supported: {error_msg}")
+                else:
+                    return None
+            elif result_code != 0:
+                # Check if error message indicates unsupported command
+                if 'not supported' in error_msg.lower() or 'command not found' in error_msg.lower():
+                    logger.info(f"Command {command} appears unsupported based on error message")
                     if raise_on_unsupported:
                         raise CommandNotSupportedException(f"Command '{command}' not supported: {error_msg}")
                     else:
                         return None
-                elif result_code != 0:
-                    raise Exception(f"KEA command failed: {error_msg}")
-                    
-                return result[0]
-            
-            return result
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to communicate with KEA: {e}")
-            raise Exception(f"Failed to communicate with KEA server: {e}")
+                logger.error(f"KEA command {command} failed with code {result_code}: {error_msg}")
+                raise Exception(f"KEA command failed: {error_msg}")
+                
+            return result[0]
+        
+        return result
     
     def get_version(self) -> str:
         """Get KEA version"""
@@ -308,11 +318,81 @@ class KeaClient:
             "reservation": reservation
         }
         
-        result = self._send_command("reservation-add", ["dhcp4"], arguments)
+        try:
+            result = self._send_command("reservation-add", ["dhcp4"], arguments)
+            logger.info(f"Created reservation: IP={ip_address}, MAC={hw_address}")
+            return reservation
+        except CommandNotSupportedException as e:
+            logger.warning(f"reservation-add not supported, using config-set fallback: {e}")
+            # Fallback: Add reservation via config modification
+            return self._create_reservation_via_config(ip_address, hw_address, hostname, subnet_id)
+        except Exception as e:
+            logger.error(f"Unexpected error in create_reservation: {type(e).__name__}: {e}")
+            raise
+    
+    def _create_reservation_via_config(self, ip_address: str, hw_address: str, 
+                                       hostname: str = "", subnet_id: Optional[int] = None) -> Dict:
+        """
+        Create reservation by modifying the configuration (fallback when host_cmds not available)
         
-        logger.info(f"Created reservation: IP={ip_address}, MAC={hw_address}")
+        Args:
+            ip_address: IP address to reserve
+            hw_address: Hardware (MAC) address
+            hostname: Optional hostname
+            subnet_id: Subnet ID where the reservation should be created
+            
+        Returns:
+            Created reservation dictionary
+        """
+        # Get current configuration
+        result = self._send_command("config-get", ["dhcp4"])
+        config = result.get('arguments', {})
+        dhcp4_config = config.get('Dhcp4', {})
         
-        return reservation
+        # Find the target subnet
+        subnets = dhcp4_config.get('subnet4', [])
+        target_subnet = None
+        
+        for subnet in subnets:
+            if subnet_id is None or subnet.get('id') == subnet_id:
+                target_subnet = subnet
+                if subnet_id is not None:
+                    break
+                # If no subnet_id specified, use first subnet
+                if target_subnet is None:
+                    target_subnet = subnet
+        
+        if target_subnet is None:
+            raise Exception(f"Subnet {subnet_id} not found in configuration")
+        
+        # Create reservation object
+        new_reservation = {
+            "hw-address": hw_address,
+            "ip-address": ip_address
+        }
+        if hostname:
+            new_reservation["hostname"] = hostname
+        
+        # Add reservation to subnet
+        if 'reservations' not in target_subnet:
+            target_subnet['reservations'] = []
+        
+        # Check if reservation already exists
+        for res in target_subnet['reservations']:
+            if res.get('ip-address') == ip_address or res.get('hw-address') == hw_address:
+                raise Exception(f"Reservation already exists for {ip_address} or {hw_address}")
+        
+        target_subnet['reservations'].append(new_reservation)
+        
+        # Apply the updated configuration
+        set_arguments = {
+            "Dhcp4": dhcp4_config
+        }
+        
+        self._send_command("config-set", ["dhcp4"], set_arguments)
+        logger.info(f"Created reservation via config-set: IP={ip_address}, MAC={hw_address}")
+        
+        return new_reservation
     
     def delete_reservation(self, ip_address: str, subnet_id: Optional[int] = None):
         """
@@ -329,8 +409,15 @@ class KeaClient:
         if subnet_id is not None:
             arguments["subnet-id"] = subnet_id
         
-        self._send_command("reservation-del", ["dhcp4"], arguments)
-        logger.info(f"Deleted reservation: IP={ip_address}")
+        try:
+            self._send_command("reservation-del", ["dhcp4"], arguments)
+            logger.info(f"Deleted reservation: IP={ip_address}")
+        except CommandNotSupportedException as e:
+            logger.error(f"reservation-del not supported: {e}")
+            raise Exception(
+                "KEA reservation commands not available. "
+                "Please enable the 'host_cmds' hook library in your KEA configuration."
+            )
     
     def get_subnets(self) -> List[Dict]:
         """

@@ -44,8 +44,32 @@ try:
     result = kea_client._send_command("list-commands", ["dhcp4"])
     commands = result.get('arguments', [])
     print(f"   ✓ Available commands ({len(commands)}):")
-    for cmd in sorted(commands):
-        print(f"     - {cmd}")
+    
+    # Check for required commands
+    required_lease_cmds = ['lease4-get-all', 'lease4-get-page']
+    required_host_cmds = ['reservation-add', 'reservation-del', 'reservation-get-all']
+    
+    lease_cmds_found = [cmd for cmd in required_lease_cmds if cmd in commands]
+    host_cmds_found = [cmd for cmd in required_host_cmds if cmd in commands]
+    
+    print(f"\n   Lease Commands (lease_cmds hook):")
+    for cmd in required_lease_cmds:
+        status = "✓" if cmd in commands else "✗"
+        print(f"     {status} {cmd}")
+    
+    print(f"\n   Reservation Commands (host_cmds hook):")
+    for cmd in required_host_cmds:
+        status = "✓" if cmd in commands else "✗"
+        print(f"     {status} {cmd}")
+    
+    if len(lease_cmds_found) == 0:
+        print(f"\n   ⚠ WARNING: lease_cmds hook library is NOT loaded!")
+        print(f"   You will not be able to view leases.")
+    
+    if len(host_cmds_found) == 0:
+        print(f"\n   ⚠ WARNING: host_cmds hook library is NOT loaded!")
+        print(f"   You will not be able to create reservations.")
+        
 except Exception as e:
     print(f"   ✗ Failed: {e}")
 
