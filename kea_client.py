@@ -93,7 +93,7 @@ class KeaClient:
         if arguments:
             payload["arguments"] = arguments
         
-        logger.debug(f"Sending command to KEA: {command}")
+        logger.debug(f"Sending command '{command}' to KEA at {self.url}")
         
         try:
             response = self.session.post(
@@ -105,16 +105,16 @@ class KeaClient:
             response.raise_for_status()
             result = response.json()
         except requests.exceptions.SSLError as e:
-            logger.error(f"SSL Error communicating with KEA: {e}")
+            logger.error(f"SSL Error communicating with KEA at {self.url}: {e}")
             raise Exception(f"Failed to communicate with KEA server: {e}")
         except requests.exceptions.Timeout as e:
-            logger.error(f"Timeout communicating with KEA: {e}")
+            logger.error(f"Timeout communicating with KEA at {self.url}: {e}")
             raise Exception(f"KEA server timeout: {e}")
         except requests.exceptions.ConnectionError as e:
-            logger.error(f"Connection error with KEA: {e}")
+            logger.error(f"Connection error with KEA at {self.url}: {e}")
             raise Exception(f"Failed to connect to KEA server: {e}")
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to communicate with KEA: {e}")
+            logger.error(f"Failed to communicate with KEA at {self.url}: {e}")
             raise Exception(f"Failed to communicate with KEA server: {e}")
         
         # Check if command was successful

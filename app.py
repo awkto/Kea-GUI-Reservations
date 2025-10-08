@@ -35,31 +35,68 @@ DEFAULT_CONFIG = {
 # Load configuration
 config_path = os.environ.get('CONFIG_PATH', 'config.yaml')
 config = DEFAULT_CONFIG.copy()
+_config_cache = {'mtime': 0, 'config': None}
 
-if os.path.exists(config_path):
-    try:
-        with open(config_path, 'r') as f:
-            loaded_config = yaml.safe_load(f)
+def load_config():
+    """
+    Load configuration from file, with caching based on file modification time.
+    This ensures all worker processes see config updates while avoiding excessive disk I/O.
+    """
+    global config, _config_cache
+    
+    # Check if file exists and get modification time
+    if os.path.exists(config_path):
+        current_mtime = os.path.getmtime(config_path)
+        
+        # Return cached config if file hasn't changed
+        if _config_cache['mtime'] == current_mtime and _config_cache['config'] is not None:
+            return _config_cache['config']
+        
+        # File changed or first load - reload from disk
+        try:
+            with open(config_path, 'r') as f:
+                loaded_config = yaml.safe_load(f)
+                
             if loaded_config:
                 # Deep merge loaded config with defaults
+                new_config = DEFAULT_CONFIG.copy()
                 for key in loaded_config:
-                    if isinstance(loaded_config[key], dict) and key in config:
-                        config[key].update(loaded_config[key])
+                    if isinstance(loaded_config[key], dict) and key in new_config:
+                        new_config[key].update(loaded_config[key])
                     else:
-                        config[key] = loaded_config[key]
-        logger_msg = f"✅ Loaded configuration from {config_path}"
-        logger_msg += f"\n   KEA URL: {config['kea']['control_agent_url']}"
-    except Exception as e:
-        logger_msg = f"❌ Error loading config from {config_path}, using defaults: {e}"
-else:
-    logger_msg = f"⚠️  No config file found at {config_path}, using defaults"
-    logger_msg += f"\n   Default KEA URL: {config['kea']['control_agent_url']}"
+                        new_config[key] = loaded_config[key]
+                
+                # Update cache
+                _config_cache['mtime'] = current_mtime
+                _config_cache['config'] = new_config
+                config = new_config
+                
+                logger.debug(f"✅ Reloaded config from {config_path} (mtime: {current_mtime})")
+                logger.debug(f"   KEA URL: {config['kea']['control_agent_url']}")
+                return new_config
+        except Exception as e:
+            logger.error(f"❌ Error loading config from {config_path}: {e}")
+    
+    # Fall back to defaults if file doesn't exist or load failed
+    if _config_cache['config'] is None:
+        logger.warning(f"⚠️  Using default configuration")
+        _config_cache['config'] = DEFAULT_CONFIG.copy()
+        config = _config_cache['config']
+    
+    return config
+
+# Initial load at startup
+initial_config = load_config()
+logger_msg = f"✅ Initial configuration loaded"
+logger_msg += f"\n   Config path: {config_path}"
+logger_msg += f"\n   KEA URL: {initial_config['kea']['control_agent_url']}"
+if not os.path.exists(config_path):
     logger_msg += f"\n   💡 Tip: Mount your config.yaml to /app/config/config.yaml in Docker"
 
 # Setup logging
 logging.basicConfig(
-    level=getattr(logging, config['logging']['level']),
-    format=config['logging']['format']
+    level=getattr(logging, initial_config['logging']['level']),
+    format=initial_config['logging']['format']
 )
 logger = logging.getLogger(__name__)
 logger.info(logger_msg)
@@ -68,12 +105,13 @@ logger.info(logger_msg)
 def get_kea_client():
     """
     Get KEA client instance with current configuration.
-    This ensures we always use the latest config, even after updates.
+    Reloads config from file to ensure all worker processes see updates.
     """
+    current_config = load_config()
     return KeaClient(
-        url=config['kea']['control_agent_url'],
-        username=config['kea'].get('username'),
-        password=config['kea'].get('password')
+        url=current_config['kea']['control_agent_url'],
+        username=current_config['kea'].get('username'),
+        password=current_config['kea'].get('password')
     )
 
 
@@ -82,15 +120,20 @@ def is_config_valid():
     Check if the configuration is valid (not in first-start/unconfigured state).
     Returns True if config is properly set up, False if it's still using defaults.
     """
-    kea_url = config['kea']['control_agent_url']
+    current_config = load_config()
+    kea_url = current_config['kea']['control_agent_url']
     
-    # Check if using default localhost URL or empty URL
+    # Check if using empty URL
     if not kea_url or kea_url.strip() == '':
         return False
     
-    # Check if it's still pointing to localhost (default config)
+    # Check if it's still pointing to localhost (default/unconfigured)
+    # This is OK for development but indicates first-start state in production
     if 'localhost' in kea_url.lower() or '127.0.0.1' in kea_url:
-        return False
+        # But if running in Docker and localhost is intentional, that's fine
+        # We'll be lenient and only reject if it's the exact default
+        if kea_url == 'http://localhost:8000':
+            return False
     
     return True
 
@@ -255,13 +298,16 @@ def get_subnets():
 def get_config():
     """Get current configuration (sanitized)"""
     try:
+        # Load current config from file
+        current_config = load_config()
+        
         # Return sanitized config (hide password)
         sanitized_config = {}
-        for key in config:
-            if isinstance(config[key], dict):
-                sanitized_config[key] = config[key].copy()
+        for key in current_config:
+            if isinstance(current_config[key], dict):
+                sanitized_config[key] = current_config[key].copy()
             else:
-                sanitized_config[key] = config[key]
+                sanitized_config[key] = current_config[key]
         
         if 'kea' in sanitized_config and 'password' in sanitized_config['kea']:
             sanitized_config['kea']['password'] = '***' if sanitized_config['kea']['password'] else ''
@@ -283,7 +329,7 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def save_config():
     """Save configuration to file"""
-    global config
+    global config, _config_cache
     
     try:
         data = request.get_json()
@@ -309,22 +355,27 @@ def save_config():
             }), 400
         
         # If password is masked, keep the existing password
-        if new_config['kea'].get('password') == '***' and config['kea'].get('password'):
-            new_config['kea']['password'] = config['kea']['password']
+        current_config = load_config()
+        if new_config['kea'].get('password') == '***' and current_config['kea'].get('password'):
+            new_config['kea']['password'] = current_config['kea']['password']
         
         # Write to file
         with open(config_path, 'w') as f:
             yaml.dump(new_config, f, default_flow_style=False, sort_keys=False)
         
-        logger.info(f"Configuration saved to {config_path}")
-        logger.info(f"New Kea URL: {new_config['kea']['control_agent_url']}")
+        logger.info(f"✅ Configuration saved to {config_path}")
+        logger.info(f"   New KEA URL: {new_config['kea']['control_agent_url']}")
         
-        # Update global config - this will be used by get_kea_client() on next request
-        config = new_config
+        # Invalidate cache so all workers reload on next request
+        _config_cache['mtime'] = 0
+        _config_cache['config'] = None
+        
+        # Force immediate reload
+        load_config()
         
         return jsonify({
             'success': True,
-            'message': f'Configuration saved to {config_path}. Changes will take effect on next request.'
+            'message': f'Configuration saved successfully. All workers will use the new config immediately.'
         }), 200
         
     except Exception as e:
@@ -355,8 +406,9 @@ def delete_reservation(ip_address):
 
 
 if __name__ == '__main__':
+    runtime_config = load_config()
     app.run(
-        host=config['app']['host'],
-        port=config['app']['port'],
-        debug=config['app']['debug']
+        host=runtime_config['app']['host'],
+        port=runtime_config['app']['port'],
+        debug=runtime_config['app']['debug']
     )
