@@ -6,6 +6,8 @@ Handles communication with KEA DHCP server via Control Agent REST API
 import requests
 import logging
 from typing import List, Dict, Optional
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,42 @@ class KeaClient:
         self.session = requests.Session()
         if self.auth:
             self.session.auth = self.auth
+        
+        # Configure retry strategy for transient SSL/network errors
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"]
+        )
+        
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,
+            pool_maxsize=10,
+            pool_block=False
+        )
+        
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        # Disable SSL verification warnings if needed (not recommended for production)
+        # import urllib3
+        # urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - close session"""
+        self.close()
+    
+    def close(self):
+        """Close the session and release connections"""
+        if self.session:
+            self.session.close()
+            logger.debug("KEA client session closed")
     
     def _send_command(self, command: str, service: List[str], arguments: Optional[Dict] = None, 
                      raise_on_unsupported: bool = True) -> Dict:
@@ -61,10 +99,20 @@ class KeaClient:
             response = self.session.post(
                 self.url,
                 json=payload,
-                timeout=10
+                timeout=30,  # Increased timeout for reliability
+                verify=True  # Keep SSL verification enabled for security
             )
             response.raise_for_status()
             result = response.json()
+        except requests.exceptions.SSLError as e:
+            logger.error(f"SSL Error communicating with KEA: {e}")
+            raise Exception(f"Failed to communicate with KEA server: {e}")
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Timeout communicating with KEA: {e}")
+            raise Exception(f"KEA server timeout: {e}")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error with KEA: {e}")
+            raise Exception(f"Failed to connect to KEA server: {e}")
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to communicate with KEA: {e}")
             raise Exception(f"Failed to communicate with KEA server: {e}")
