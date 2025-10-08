@@ -61,12 +61,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.info(logger_msg)
 
-# Initialize KEA client
-kea_client = KeaClient(
-    url=config['kea']['control_agent_url'],
-    username=config['kea'].get('username'),
-    password=config['kea'].get('password')
-)
+
+def get_kea_client():
+    """
+    Get KEA client instance with current configuration.
+    This ensures we always use the latest config, even after updates.
+    """
+    return KeaClient(
+        url=config['kea']['control_agent_url'],
+        username=config['kea'].get('username'),
+        password=config['kea'].get('password')
+    )
 
 
 @app.route('/')
@@ -80,7 +85,8 @@ def health_check():
     """Health check endpoint"""
     try:
         # Test connection to KEA
-        kea_client.get_version()
+        client = get_kea_client()
+        client.get_version()
         return jsonify({
             'status': 'healthy',
             'kea_connection': 'ok'
@@ -98,8 +104,9 @@ def health_check():
 def get_leases():
     """Fetch all DHCPv4 leases"""
     try:
+        client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
-        leases = kea_client.get_leases(subnet_id=subnet_id)
+        leases = client.get_leases(subnet_id=subnet_id)
         return jsonify({
             'success': True,
             'leases': leases,
@@ -117,8 +124,9 @@ def get_leases():
 def get_reservations():
     """Fetch all DHCPv4 reservations"""
     try:
+        client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
-        reservations = kea_client.get_reservations(subnet_id=subnet_id)
+        reservations = client.get_reservations(subnet_id=subnet_id)
         return jsonify({
             'success': True,
             'reservations': reservations,
@@ -136,6 +144,7 @@ def get_reservations():
 def promote_lease():
     """Promote a lease to a permanent reservation"""
     try:
+        client = get_kea_client()
         data = request.get_json()
         
         if not data:
@@ -157,7 +166,7 @@ def promote_lease():
         
         logger.info(f"Promoting lease: IP={ip_address}, MAC={hw_address}")
         
-        result = kea_client.create_reservation(
+        result = client.create_reservation(
             ip_address=ip_address,
             hw_address=hw_address,
             hostname=hostname,
@@ -182,7 +191,8 @@ def promote_lease():
 def get_subnets():
     """Fetch configured subnets"""
     try:
-        subnets = kea_client.get_subnets()
+        client = get_kea_client()
+        subnets = client.get_subnets()
         return jsonify({
             'success': True,
             'subnets': subnets
@@ -227,7 +237,7 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def save_config():
     """Save configuration to file"""
-    global config, kea_client
+    global config
     
     try:
         data = request.get_json()
@@ -261,20 +271,14 @@ def save_config():
             yaml.dump(new_config, f, default_flow_style=False, sort_keys=False)
         
         logger.info(f"Configuration saved to {config_path}")
+        logger.info(f"New Kea URL: {new_config['kea']['control_agent_url']}")
         
-        # Update global config
+        # Update global config - this will be used by get_kea_client() on next request
         config = new_config
-        
-        # Reinitialize KEA client with new config
-        kea_client = KeaClient(
-            url=config['kea']['control_agent_url'],
-            username=config['kea'].get('username'),
-            password=config['kea'].get('password')
-        )
         
         return jsonify({
             'success': True,
-            'message': f'Configuration saved to {config_path}. KEA client reinitial ized with new settings.'
+            'message': f'Configuration saved to {config_path}. Changes will take effect on next request.'
         }), 200
         
     except Exception as e:
@@ -289,8 +293,9 @@ def save_config():
 def delete_reservation(ip_address):
     """Delete a reservation"""
     try:
+        client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
-        kea_client.delete_reservation(ip_address, subnet_id)
+        client.delete_reservation(ip_address, subnet_id)
         return jsonify({
             'success': True,
             'message': f'Successfully deleted reservation for {ip_address}'
