@@ -37,6 +37,13 @@ config_path = os.environ.get('CONFIG_PATH', 'config.yaml')
 config = DEFAULT_CONFIG.copy()
 _config_cache = {'mtime': 0, 'config': None}
 
+# Setup basic logging first (will be reconfigured after loading config)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 def load_config():
     """
     Load configuration from file, with caching based on file modification time.
@@ -87,18 +94,20 @@ def load_config():
 
 # Initial load at startup
 initial_config = load_config()
+
+# Reconfigure logging with loaded config
+logging.basicConfig(
+    level=getattr(logging, initial_config['logging']['level']),
+    format=initial_config['logging']['format'],
+    force=True  # Force reconfiguration
+)
+
 logger_msg = f"✅ Initial configuration loaded"
 logger_msg += f"\n   Config path: {config_path}"
 logger_msg += f"\n   KEA URL: {initial_config['kea']['control_agent_url']}"
 if not os.path.exists(config_path):
     logger_msg += f"\n   💡 Tip: Mount your config.yaml to /app/config/config.yaml in Docker"
 
-# Setup logging
-logging.basicConfig(
-    level=getattr(logging, initial_config['logging']['level']),
-    format=initial_config['logging']['format']
-)
-logger = logging.getLogger(__name__)
 logger.info(logger_msg)
 
 
