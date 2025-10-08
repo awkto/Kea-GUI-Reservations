@@ -119,29 +119,82 @@ Visit `http://localhost:5000`
 
 ### Using Pre-built Image (Recommended)
 
+**Important:** You must mount a configuration file for the container to work properly!
+
 ```bash
-# Pull the latest image
+# 1. Create a config.yaml file on your host
+cat > config.yaml << 'EOF'
+kea:
+  control_agent_url: "https://your-kea-server:8000"
+  username: "admin"
+  password: "your-password"
+  default_subnet_id: 1
+
+app:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+EOF
+
+# 2. Pull the latest image
 docker pull awkto/kea-gui-reservations:latest
 
-# Run with your config
+# 3. Run with your config mounted
 docker run -d \
   --name kea-gui \
   -p 5000:5000 \
   -v $(pwd)/config.yaml:/app/config/config.yaml:ro \
   awkto/kea-gui-reservations:latest
+
+# 4. Check logs to verify config was loaded
+docker logs kea-gui | head -20
+# Should see: "✅ Loaded configuration from /app/config/config.yaml"
 ```
+
+**⚠️ Common Mistake:** Forgetting to mount the config file will cause the container to use default settings (localhost), which will fail!
+
+### Using Docker Compose (Easiest)
+
+```bash
+# 1. Clone the repository or create these files:
+# - docker-compose.yml
+# - config.yaml
+
+# 2. Edit config.yaml with your KEA server details
+
+# 3. Start the container
+docker-compose up -d
+
+# 4. View logs
+docker-compose logs -f
+```
+
+### Verifying Configuration
+
+After starting the container, verify the config was loaded:
+
+```bash
+# Check config file exists in container
+docker exec kea-gui cat /app/config/config.yaml
+
+# Check via API
+curl http://localhost:5000/api/config | jq '.config.kea.control_agent_url'
+
+# Check health
+curl http://localhost:5000/api/health
+```
+
+**Troubleshooting:** If you see errors connecting to localhost when you configured a different server, see [DOCKER_CONFIG_TROUBLESHOOTING.md](DOCKER_CONFIG_TROUBLESHOOTING.md)
 
 ### Building from Source
 
 ```bash
 docker build -t kea-gui .
-docker run -p 5000:5000 -v $(pwd)/config.yaml:/app/config.yaml kea-gui
-```
-
-### Using Docker Compose
-
-```bash
-docker-compose up -d
+docker run -d -p 5000:5000 -v $(pwd)/config.yaml:/app/config/config.yaml:ro kea-gui
 ```
 
 ## API Endpoints

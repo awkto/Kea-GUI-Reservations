@@ -47,11 +47,14 @@ if os.path.exists(config_path):
                         config[key].update(loaded_config[key])
                     else:
                         config[key] = loaded_config[key]
-        logger_msg = f"Loaded configuration from {config_path}"
+        logger_msg = f"✅ Loaded configuration from {config_path}"
+        logger_msg += f"\n   KEA URL: {config['kea']['control_agent_url']}"
     except Exception as e:
-        logger_msg = f"Error loading config, using defaults: {e}"
+        logger_msg = f"❌ Error loading config from {config_path}, using defaults: {e}"
 else:
-    logger_msg = f"No config file found at {config_path}, using defaults"
+    logger_msg = f"⚠️  No config file found at {config_path}, using defaults"
+    logger_msg += f"\n   Default KEA URL: {config['kea']['control_agent_url']}"
+    logger_msg += f"\n   💡 Tip: Mount your config.yaml to /app/config/config.yaml in Docker"
 
 # Setup logging
 logging.basicConfig(
