@@ -45,10 +45,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
-      - name: Create GitHub Release
+      - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
+          fail_on_unmatched_files: false
           body: |
             ## Docker Image
             
