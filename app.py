@@ -74,6 +74,24 @@ def get_kea_client():
     )
 
 
+def is_config_valid():
+    """
+    Check if the configuration is valid (not in first-start/unconfigured state).
+    Returns True if config is properly set up, False if it's still using defaults.
+    """
+    kea_url = config['kea']['control_agent_url']
+    
+    # Check if using default localhost URL or empty URL
+    if not kea_url or kea_url.strip() == '':
+        return False
+    
+    # Check if it's still pointing to localhost (default config)
+    if 'localhost' in kea_url.lower() or '127.0.0.1' in kea_url:
+        return False
+    
+    return True
+
+
 @app.route('/')
 def index():
     """Render the main page"""
@@ -83,6 +101,14 @@ def index():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    # Check if configuration is valid first
+    if not is_config_valid():
+        return jsonify({
+            'status': 'unconfigured',
+            'kea_connection': 'not_configured',
+            'message': 'KEA server not configured. Please update configuration.'
+        }), 200
+    
     try:
         # Test connection to KEA
         client = get_kea_client()
@@ -103,6 +129,14 @@ def health_check():
 @app.route('/api/leases', methods=['GET'])
 def get_leases():
     """Fetch all DHCPv4 leases"""
+    # Check if configuration is valid first
+    if not is_config_valid():
+        return jsonify({
+            'success': False,
+            'unconfigured': True,
+            'error': 'KEA server not configured. Please update configuration to connect.'
+        }), 200
+    
     try:
         client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
@@ -190,6 +224,15 @@ def promote_lease():
 @app.route('/api/subnets', methods=['GET'])
 def get_subnets():
     """Fetch configured subnets"""
+    # Check if configuration is valid first
+    if not is_config_valid():
+        return jsonify({
+            'success': False,
+            'unconfigured': True,
+            'error': 'KEA server not configured',
+            'subnets': []
+        }), 200
+    
     try:
         client = get_kea_client()
         subnets = client.get_subnets()

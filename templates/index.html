@@ -467,10 +467,19 @@
             deleteReservationModal = new bootstrap.Modal(document.getElementById('deleteReservationModal'));
             configModal = new bootstrap.Modal(document.getElementById('configModal'));
             
-            checkHealth();
-            loadSubnets();
-            loadReservations().then(() => {
-                loadLeases();
+            // Check health first to detect unconfigured state
+            checkHealth().then(healthData => {
+                if (healthData && healthData.status === 'unconfigured') {
+                    // Show config modal immediately for first-start
+                    showFirstStartBanner();
+                    setTimeout(() => showConfigModal(), 500);
+                } else {
+                    // Normal startup - load data
+                    loadSubnets();
+                    loadReservations().then(() => {
+                        loadLeases();
+                    });
+                }
             });
             
             // Setup search filter
@@ -490,17 +499,24 @@
                     statusEl.classList.remove('offline');
                     statusEl.classList.add('online');
                     textEl.textContent = 'Connected to KEA';
+                } else if (data.status === 'unconfigured') {
+                    statusEl.classList.remove('online');
+                    statusEl.classList.add('offline');
+                    textEl.textContent = 'Not Configured';
                 } else {
                     statusEl.classList.remove('online');
                     statusEl.classList.add('offline');
                     textEl.textContent = 'Connection failed';
                 }
+                
+                return data;
             } catch (error) {
                 const statusEl = document.querySelector('.connection-status');
                 const textEl = document.getElementById('status-text');
                 statusEl.classList.remove('online');
                 statusEl.classList.add('offline');
                 textEl.textContent = 'Connection error';
+                return null;
             }
         }
 
@@ -566,6 +582,13 @@
                     displayLeases(allLeases);
                     loading.style.display = 'none';
                     tableContainer.style.display = 'block';
+                } else if (data.unconfigured) {
+                    // Show unconfigured state message
+                    loading.style.display = 'none';
+                    const errorText = document.getElementById('error-text');
+                    errorText.textContent = data.error;
+                    document.getElementById('setup-help').style.display = 'none';
+                    errorMsg.style.display = 'block';
                 } else {
                     throw new Error(data.error || 'Failed to load leases');
                 }
@@ -969,6 +992,24 @@
             }, 5000);
         }
 
+        function showFirstStartBanner() {
+            const banner = document.createElement('div');
+            banner.id = 'first-start-banner';
+            banner.className = 'alert alert-warning alert-dismissible fade show';
+            banner.style.marginBottom = '0';
+            banner.innerHTML = `
+                <div class="container-fluid">
+                    <h5><i class="bi bi-exclamation-triangle-fill"></i> First-Time Setup Required</h5>
+                    <p class="mb-2">Welcome! Your KEA DHCP Lease Manager needs to be configured before use.</p>
+                    <p class="mb-0">Please configure your KEA server connection in the configuration dialog.</p>
+                </div>
+            `;
+            
+            // Insert after navbar
+            const navbar = document.querySelector('.navbar');
+            navbar.insertAdjacentElement('afterend', banner);
+        }
+
         async function showConfigModal() {
             configModal.show();
             
@@ -1052,13 +1093,19 @@
                 
                 if (data.success) {
                     configModal.hide();
-                    showAlert('success', data.message);
                     
-                    // Refresh health check after a short delay
+                    // Remove first-start banner if it exists
+                    const banner = document.getElementById('first-start-banner');
+                    if (banner) {
+                        banner.remove();
+                    }
+                    
+                    showAlert('success', data.message + ' Reloading page...');
+                    
+                    // Reload the page after a short delay to apply new configuration
                     setTimeout(() => {
-                        checkHealth();
-                        loadSubnets();
-                    }, 1000);
+                        window.location.reload();
+                    }, 1500);
                 } else {
                     throw new Error(data.error || 'Failed to save configuration');
                 }
