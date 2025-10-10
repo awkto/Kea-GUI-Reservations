@@ -762,18 +762,6 @@
                 return;
             }
             
-            // Check if another lease exists for this IP
-            const existingLease = allLeases.find(l => l['ip-address'] === newIP);
-            
-            if (existingLease) {
-                validationMsg.className = 'alert alert-danger';
-                validationMsg.innerHTML = `<i class="bi bi-exclamation-circle"></i> <strong>Conflict!</strong> A lease already exists for IP ${newIP}` +
-                    `<br><small>MAC: ${existingLease['hw-address']}${existingLease.hostname ? ', Hostname: ' + existingLease.hostname : ''}</small>`;
-                validationMsg.style.display = 'block';
-                confirmBtn.disabled = true;
-                return;
-            }
-            
             // Check if a reservation exists for this IP
             const existingReservation = allReservations.find(r => r['ip-address'] === newIP);
             
@@ -807,14 +795,8 @@
                 return;
             }
             
-            // If IP changed, do final validation
+            // If IP changed, do final validation for reservation conflicts only
             if (ipAddress !== originalIP) {
-                const existingLease = allLeases.find(l => l['ip-address'] === ipAddress);
-                if (existingLease) {
-                    alert(`Cannot create reservation: A lease already exists for IP ${ipAddress}`);
-                    return;
-                }
-                
                 const existingReservation = allReservations.find(r => r['ip-address'] === ipAddress);
                 if (existingReservation) {
                     alert(`Cannot create reservation: A reservation already exists for IP ${ipAddress}`);
