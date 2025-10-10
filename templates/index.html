@@ -152,17 +152,28 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to promote this lease to a permanent reservation?</p>
-                    <dl class="row">
-                        <dt class="col-sm-4">IP Address:</dt>
-                        <dd class="col-sm-8" id="modal-ip"></dd>
-                        <dt class="col-sm-4">MAC Address:</dt>
-                        <dd class="col-sm-8" id="modal-mac"></dd>
-                        <dt class="col-sm-4">Hostname:</dt>
-                        <dd class="col-sm-8" id="modal-hostname"></dd>
-                        <dt class="col-sm-4">Subnet ID:</dt>
-                        <dd class="col-sm-8" id="modal-subnet"></dd>
-                    </dl>
+                    <p>Configure the permanent reservation for this device:</p>
+                    <form id="promote-form">
+                        <div class="mb-3">
+                            <label for="promote-ip-address" class="form-label">IP Address *</label>
+                            <input type="text" class="form-control" id="promote-ip-address" 
+                                   placeholder="192.168.1.100" required>
+                            <div class="form-text">You can change the IP address. Defaults to the lease's current IP.</div>
+                            <div id="ip-validation-message" class="mt-2" style="display: none;"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">MAC Address</label>
+                            <input type="text" class="form-control" id="promote-mac-address" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Hostname</label>
+                            <div id="promote-hostname" class="form-control-plaintext"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Subnet ID</label>
+                            <div id="promote-subnet" class="form-control-plaintext"></div>
+                        </div>
+                    </form>
                     <div class="alert alert-info mb-0">
                         <i class="bi bi-info-circle"></i>
                         This will create a permanent reservation for this device.
@@ -170,7 +181,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" onclick="confirmPromotion()">
+                    <button type="button" class="btn btn-success" onclick="confirmPromotion()" id="confirm-promote-btn">
                         <i class="bi bi-check-circle"></i> Confirm Promotion
                     </button>
                 </div>
@@ -705,16 +716,111 @@
         function promoteLease(lease) {
             selectedLease = lease;
             
-            document.getElementById('modal-ip').textContent = lease['ip-address'];
-            document.getElementById('modal-mac').textContent = lease['hw-address'];
-            document.getElementById('modal-hostname').textContent = lease.hostname || 'none';
-            document.getElementById('modal-subnet').textContent = lease['subnet-id'];
+            // Populate form with lease data
+            document.getElementById('promote-ip-address').value = lease['ip-address'];
+            document.getElementById('promote-mac-address').value = lease['hw-address'];
+            document.getElementById('promote-hostname').textContent = lease.hostname || 'none';
+            document.getElementById('promote-subnet').textContent = lease['subnet-id'];
+            
+            // Clear any previous validation messages
+            const validationMsg = document.getElementById('ip-validation-message');
+            validationMsg.style.display = 'none';
+            validationMsg.className = '';
+            
+            // Enable the confirm button
+            document.getElementById('confirm-promote-btn').disabled = false;
+            
+            // Add IP validation on change
+            const ipInput = document.getElementById('promote-ip-address');
+            ipInput.removeEventListener('input', validatePromoteIP);
+            ipInput.addEventListener('input', validatePromoteIP);
             
             promoteModal.show();
+        }
+        
+        async function validatePromoteIP() {
+            const ipInput = document.getElementById('promote-ip-address');
+            const newIP = ipInput.value.trim();
+            const originalIP = selectedLease['ip-address'];
+            const validationMsg = document.getElementById('ip-validation-message');
+            const confirmBtn = document.getElementById('confirm-promote-btn');
+            
+            // If IP hasn't changed, no validation needed
+            if (newIP === originalIP) {
+                validationMsg.style.display = 'none';
+                confirmBtn.disabled = false;
+                return;
+            }
+            
+            // Basic IP format validation
+            const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+            if (!ipPattern.test(newIP)) {
+                validationMsg.className = 'alert alert-warning';
+                validationMsg.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Please enter a valid IP address';
+                validationMsg.style.display = 'block';
+                confirmBtn.disabled = true;
+                return;
+            }
+            
+            // Check if another lease exists for this IP
+            const existingLease = allLeases.find(l => l['ip-address'] === newIP);
+            
+            if (existingLease) {
+                validationMsg.className = 'alert alert-danger';
+                validationMsg.innerHTML = `<i class="bi bi-exclamation-circle"></i> <strong>Conflict!</strong> A lease already exists for IP ${newIP}` +
+                    `<br><small>MAC: ${existingLease['hw-address']}${existingLease.hostname ? ', Hostname: ' + existingLease.hostname : ''}</small>`;
+                validationMsg.style.display = 'block';
+                confirmBtn.disabled = true;
+                return;
+            }
+            
+            // Check if a reservation exists for this IP
+            const existingReservation = allReservations.find(r => r['ip-address'] === newIP);
+            
+            if (existingReservation) {
+                validationMsg.className = 'alert alert-danger';
+                validationMsg.innerHTML = `<i class="bi bi-exclamation-circle"></i> <strong>Conflict!</strong> A reservation already exists for IP ${newIP}` +
+                    `<br><small>MAC: ${existingReservation['hw-address']}${existingReservation.hostname ? ', Hostname: ' + existingReservation.hostname : ''}</small>`;
+                validationMsg.style.display = 'block';
+                confirmBtn.disabled = true;
+                return;
+            }
+            
+            // IP is valid and available
+            validationMsg.className = 'alert alert-success';
+            validationMsg.innerHTML = '<i class="bi bi-check-circle"></i> IP address is available';
+            validationMsg.style.display = 'block';
+            confirmBtn.disabled = false;
         }
 
         async function confirmPromotion() {
             if (!selectedLease) return;
+            
+            // Get the IP address from the input field
+            const ipAddress = document.getElementById('promote-ip-address').value.trim();
+            const originalIP = selectedLease['ip-address'];
+            
+            // Validate IP format
+            const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+            if (!ipPattern.test(ipAddress)) {
+                alert('Please enter a valid IP address');
+                return;
+            }
+            
+            // If IP changed, do final validation
+            if (ipAddress !== originalIP) {
+                const existingLease = allLeases.find(l => l['ip-address'] === ipAddress);
+                if (existingLease) {
+                    alert(`Cannot create reservation: A lease already exists for IP ${ipAddress}`);
+                    return;
+                }
+                
+                const existingReservation = allReservations.find(r => r['ip-address'] === ipAddress);
+                if (existingReservation) {
+                    alert(`Cannot create reservation: A reservation already exists for IP ${ipAddress}`);
+                    return;
+                }
+            }
             
             try {
                 const response = await fetch('/api/promote', {
@@ -723,7 +829,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        ip_address: selectedLease['ip-address'],
+                        ip_address: ipAddress,
                         hw_address: selectedLease['hw-address'],
                         hostname: selectedLease.hostname || '',
                         subnet_id: selectedLease['subnet-id']
@@ -736,7 +842,10 @@
                     promoteModal.hide();
                     
                     // Show success message
-                    showAlert('success', data.message);
+                    const successMsg = ipAddress !== originalIP 
+                        ? `Successfully promoted lease to reservation with new IP ${ipAddress} (was ${originalIP})`
+                        : data.message;
+                    showAlert('success', successMsg);
                     
                     // Refresh leases and reservations
                     await loadReservations();

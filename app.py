@@ -253,6 +253,36 @@ def promote_lease():
                 'error': 'ip_address and hw_address are required'
             }), 400
         
+        # Check if a different lease exists for this IP address
+        try:
+            leases = client.get_leases(subnet_id=subnet_id)
+            existing_lease = next((l for l in leases if l.get('ip-address') == ip_address and l.get('hw-address') != hw_address), None)
+            
+            if existing_lease:
+                logger.warning(f"Cannot promote: lease already exists for IP {ip_address} with different MAC {existing_lease.get('hw-address')}")
+                return jsonify({
+                    'success': False,
+                    'error': f'A lease already exists for IP {ip_address} with MAC address {existing_lease.get("hw-address")}. Please choose a different IP address.'
+                }), 400
+        except Exception as e:
+            logger.warning(f"Could not verify existing leases: {e}")
+            # Continue anyway if lease check fails
+        
+        # Check if a reservation already exists for this IP
+        try:
+            reservations = client.get_reservations(subnet_id=subnet_id)
+            existing_reservation = next((r for r in reservations if r.get('ip-address') == ip_address), None)
+            
+            if existing_reservation:
+                logger.warning(f"Cannot promote: reservation already exists for IP {ip_address}")
+                return jsonify({
+                    'success': False,
+                    'error': f'A reservation already exists for IP {ip_address}. Please choose a different IP address.'
+                }), 400
+        except Exception as e:
+            logger.warning(f"Could not verify existing reservations: {e}")
+            # Continue anyway if reservation check fails
+        
         logger.info(f"Promoting lease: IP={ip_address}, MAC={hw_address}")
         
         result = client.create_reservation(
