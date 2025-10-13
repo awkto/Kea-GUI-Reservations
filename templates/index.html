@@ -176,8 +176,10 @@
                             <input type="text" class="form-control" id="promote-mac-address" readonly>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Hostname</label>
-                            <div id="promote-hostname" class="form-control-plaintext"></div>
+                            <label for="promote-hostname" class="form-label">Hostname</label>
+                            <input type="text" class="form-control" id="promote-hostname" 
+                                   placeholder="Optional hostname for this device">
+                            <div class="form-text">You can change or add a hostname for this reservation.</div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Subnet ID</label>
@@ -675,20 +677,40 @@
                 }
                 
                 // Check if this lease has a matching reservation
-                const hasReservation = allReservations.some(res => 
-                    res['ip-address'] === lease['ip-address'] || 
+                // Three cases:
+                // 1. Reserved: Reservation exists for same IP
+                // 2. Evicting: Reservation exists for same MAC but different IP
+                // 3. Available: No reservation exists
+                const reservationForSameIP = allReservations.find(res => 
+                    res['ip-address'] === lease['ip-address']
+                );
+                const reservationForSameMAC = allReservations.find(res => 
                     res['hw-address'] === lease['hw-address']
                 );
                 
-                const actionButton = hasReservation 
-                    ? `<span class="badge rounded-pill d-inline-flex align-items-center gap-1" 
-                            style="font-size: 0.813rem; padding: 0.4rem 0.75rem; font-weight: 500; cursor: not-allowed; background-color: #d3d3d3; color: #6c757d;"
-                            title="This lease already has a permanent reservation">
+                let actionButton;
+                if (reservationForSameIP) {
+                    // Lease IP has a reservation - it's properly reserved
+                    actionButton = `<span class="badge rounded-pill d-inline-flex align-items-center justify-content-center gap-1" 
+                            style="font-size: 0.813rem; padding: 0.4rem 0.75rem; font-weight: 500; cursor: not-allowed; background-color: #d3d3d3; color: #6c757d; height: 30px; line-height: 1.5; min-width: 105px;"
+                            title="This IP has a permanent reservation">
                            <i class="bi bi-lock-fill" style="font-size: 0.75rem;"></i>
                            <span>Reserved</span>
-                       </span>`
-                    : `<button class="btn btn-success btn-sm rounded-pill d-inline-flex align-items-center gap-1" 
-                               style="font-size: 0.813rem; padding: 0.4rem 0.75rem; font-weight: 500; border: none; transition: all 0.2s ease;"
+                       </span>`;
+                } else if (reservationForSameMAC && reservationForSameMAC['ip-address'] !== lease['ip-address']) {
+                    // MAC has a reservation but for a different IP - lease is being evicted
+                    const reservedIP = reservationForSameMAC['ip-address'];
+                    actionButton = `<span class="badge rounded-pill d-inline-flex align-items-center justify-content-center gap-1" 
+                            style="font-size: 0.813rem; padding: 0.4rem 0.75rem; font-weight: 500; cursor: pointer; background-color: #c8b5e6; color: #4a2c7a; height: 30px; line-height: 1.5; min-width: 105px;"
+                            title="New Reserved IP: ${reservedIP}"
+                            onclick='showEvictionDetails("${lease['ip-address']}", "${reservedIP}", "${lease['hw-address']}"); event.stopPropagation();'>
+                           <i class="bi bi-arrow-right-circle-fill" style="font-size: 0.75rem;"></i>
+                           <span>Evicting</span>
+                       </span>`;
+                } else {
+                    // No reservation - can be promoted
+                    actionButton = `<button class="btn btn-success btn-sm rounded-pill d-inline-flex align-items-center justify-content-center gap-1" 
+                               style="font-size: 0.813rem; padding: 0.4rem 0.75rem; font-weight: 500; border: none; transition: all 0.2s ease; height: 30px; line-height: 1; min-width: 105px;"
                                onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.15)'"
                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'"
                                title="Convert this lease into a permanent reservation"
@@ -696,6 +718,7 @@
                            <i class="bi bi-arrow-up-circle-fill" style="font-size: 0.875rem;"></i>
                            <span>Promote</span>
                        </button>`;
+                }
                 
                 row.innerHTML = `
                     <td><strong>${lease['ip-address']}</strong></td>
@@ -735,13 +758,25 @@
             displayLeases(filtered);
         }
 
+        function showEvictionDetails(currentIP, reservedIP, macAddress) {
+            alert(
+                `Eviction Notice\n\n` +
+                `Current Lease IP: ${currentIP}\n` +
+                `MAC Address: ${macAddress}\n` +
+                `Reserved IP: ${reservedIP}\n\n` +
+                `This device has a reservation for ${reservedIP}.\n` +
+                `The current lease will not be renewed.\n` +
+                `The device will move to ${reservedIP} on the next DHCP request.`
+            );
+        }
+
         function promoteLease(lease) {
             selectedLease = lease;
             
             // Populate form with lease data
             document.getElementById('promote-ip-address').value = lease['ip-address'];
             document.getElementById('promote-mac-address').value = lease['hw-address'];
-            document.getElementById('promote-hostname').textContent = lease.hostname || 'none';
+            document.getElementById('promote-hostname').value = lease.hostname || '';
             document.getElementById('promote-subnet').textContent = lease['subnet-id'];
             
             // Clear any previous validation messages
@@ -766,6 +801,7 @@
             const originalIP = selectedLease['ip-address'];
             const validationMsg = document.getElementById('ip-validation-message');
             const confirmBtn = document.getElementById('confirm-promote-btn');
+            const subnetId = selectedLease['subnet-id'];
             
             // If IP hasn't changed, no validation needed
             if (newIP === originalIP) {
@@ -784,6 +820,33 @@
                 return;
             }
             
+            // Validate IP is in subnet range
+            try {
+                const validateResponse = await fetch('/api/validate-ip', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ip_address: newIP,
+                        subnet_id: subnetId
+                    })
+                });
+                
+                const validateData = await validateResponse.json();
+                
+                if (!validateData.success || !validateData.valid) {
+                    validationMsg.className = 'alert alert-danger';
+                    validationMsg.innerHTML = `<i class="bi bi-exclamation-circle"></i> <strong>Invalid IP!</strong> ${validateData.error || 'IP is not valid for this subnet'}`;
+                    validationMsg.style.display = 'block';
+                    confirmBtn.disabled = true;
+                    return;
+                }
+            } catch (error) {
+                console.error('Error validating subnet:', error);
+                // Continue with other validations if subnet check fails
+            }
+            
             // Check if a reservation exists for this IP
             const existingReservation = allReservations.find(r => r['ip-address'] === newIP);
             
@@ -798,7 +861,7 @@
             
             // IP is valid and available
             validationMsg.className = 'alert alert-success';
-            validationMsg.innerHTML = '<i class="bi bi-check-circle"></i> IP address is available';
+            validationMsg.innerHTML = '<i class="bi bi-check-circle"></i> IP address is valid and available';
             validationMsg.style.display = 'block';
             confirmBtn.disabled = false;
         }
@@ -806,9 +869,11 @@
         async function confirmPromotion() {
             if (!selectedLease) return;
             
-            // Get the IP address from the input field
+            // Get values from the form
             const ipAddress = document.getElementById('promote-ip-address').value.trim();
+            const hostname = document.getElementById('promote-hostname').value.trim();
             const originalIP = selectedLease['ip-address'];
+            const subnetId = selectedLease['subnet-id'];
             
             // Validate IP format
             const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
@@ -817,8 +882,34 @@
                 return;
             }
             
-            // If IP changed, do final validation for reservation conflicts only
+            // If IP changed, do final validations
             if (ipAddress !== originalIP) {
+                // Validate subnet
+                try {
+                    const validateResponse = await fetch('/api/validate-ip', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            ip_address: ipAddress,
+                            subnet_id: subnetId
+                        })
+                    });
+                    
+                    const validateData = await validateResponse.json();
+                    
+                    if (!validateData.success || !validateData.valid) {
+                        alert(`Cannot create reservation: ${validateData.error || 'IP is not valid for this subnet'}`);
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error validating subnet:', error);
+                    alert('Failed to validate IP address. Please try again.');
+                    return;
+                }
+                
+                // Check for reservation conflicts
                 const existingReservation = allReservations.find(r => r['ip-address'] === ipAddress);
                 if (existingReservation) {
                     alert(`Cannot create reservation: A reservation already exists for IP ${ipAddress}`);
@@ -835,8 +926,8 @@
                     body: JSON.stringify({
                         ip_address: ipAddress,
                         hw_address: selectedLease['hw-address'],
-                        hostname: selectedLease.hostname || '',
-                        subnet_id: selectedLease['subnet-id']
+                        hostname: hostname,
+                        subnet_id: subnetId
                     })
                 });
                 
@@ -846,9 +937,13 @@
                     promoteModal.hide();
                     
                     // Show success message
-                    const successMsg = ipAddress !== originalIP 
-                        ? `Successfully promoted lease to reservation with new IP ${ipAddress} (was ${originalIP})`
-                        : data.message;
+                    let successMsg = 'Successfully promoted lease to reservation';
+                    if (ipAddress !== originalIP) {
+                        successMsg += ` with new IP ${ipAddress} (was ${originalIP})`;
+                    }
+                    if (hostname && hostname !== selectedLease.hostname) {
+                        successMsg += ` and hostname "${hostname}"`;
+                    }
                     showAlert('success', successMsg);
                     
                     // Refresh leases and reservations
@@ -878,7 +973,20 @@
                 if (allReservations.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No reservations found</td></tr>';
                 } else {
-                    allReservations.forEach(res => {
+                    // Sort reservations by IP address
+                    const sortedReservations = [...allReservations].sort((a, b) => {
+                        const ipA = a['ip-address'].split('.').map(num => parseInt(num));
+                        const ipB = b['ip-address'].split('.').map(num => parseInt(num));
+                        
+                        for (let i = 0; i < 4; i++) {
+                            if (ipA[i] !== ipB[i]) {
+                                return ipA[i] - ipB[i];
+                            }
+                        }
+                        return 0;
+                    });
+                    
+                    sortedReservations.forEach(res => {
                         const row = document.createElement('tr');
                         row.innerHTML = `
                             <td><strong>${res['ip-address']}</strong></td>

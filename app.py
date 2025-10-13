@@ -318,6 +318,111 @@ def get_subnets():
         }), 500
 
 
+@app.route('/api/validate-ip', methods=['POST'])
+def validate_ip():
+    """
+    Validate if an IP address belongs to a subnet
+    
+    Expected JSON body:
+    {
+        "ip_address": "192.168.1.100",
+        "subnet_id": 1
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        ip_address = data.get('ip_address')
+        subnet_id = data.get('subnet_id')
+        
+        if not ip_address:
+            return jsonify({
+                'success': False,
+                'error': 'ip_address is required'
+            }), 400
+        
+        # Get subnet information
+        client = get_kea_client()
+        subnets = client.get_subnets()
+        
+        # Find the target subnet
+        target_subnet = None
+        if subnet_id is not None:
+            target_subnet = next((s for s in subnets if s['id'] == subnet_id), None)
+        
+        if not target_subnet:
+            return jsonify({
+                'success': False,
+                'valid': False,
+                'error': f'Subnet {subnet_id} not found'
+            }), 400
+        
+        # Parse subnet CIDR
+        import ipaddress
+        try:
+            subnet_cidr = target_subnet['subnet']
+            network = ipaddress.IPv4Network(subnet_cidr, strict=False)
+            ip_obj = ipaddress.IPv4Address(ip_address)
+            
+            # Check if IP is in subnet range
+            is_in_subnet = ip_obj in network
+            
+            # Check if IP is network or broadcast address
+            is_network_addr = ip_obj == network.network_address
+            is_broadcast_addr = ip_obj == network.broadcast_address
+            
+            if is_network_addr:
+                return jsonify({
+                    'success': True,
+                    'valid': False,
+                    'error': f'IP {ip_address} is the network address and cannot be used',
+                    'subnet': subnet_cidr
+                }), 200
+            
+            if is_broadcast_addr:
+                return jsonify({
+                    'success': True,
+                    'valid': False,
+                    'error': f'IP {ip_address} is the broadcast address and cannot be used',
+                    'subnet': subnet_cidr
+                }), 200
+            
+            if not is_in_subnet:
+                return jsonify({
+                    'success': True,
+                    'valid': False,
+                    'error': f'IP {ip_address} is not in subnet {subnet_cidr}',
+                    'subnet': subnet_cidr
+                }), 200
+            
+            # IP is valid
+            return jsonify({
+                'success': True,
+                'valid': True,
+                'subnet': subnet_cidr
+            }), 200
+            
+        except ValueError as e:
+            return jsonify({
+                'success': False,
+                'valid': False,
+                'error': f'Invalid IP address or subnet format: {str(e)}'
+            }), 400
+        
+    except Exception as e:
+        logger.error(f"Error validating IP: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current configuration (sanitized)"""
