@@ -38,6 +38,15 @@
         .connection-status.offline {
             background-color: #dc3545;
         }
+        .version-toggle {
+            cursor: default;
+        }
+        .version-number {
+            font-size: 0.7rem;
+            margin-left: 8px;
+            opacity: 0.8;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -45,7 +54,8 @@
     <nav class="navbar navbar-dark bg-primary mb-4">
         <div class="container-fluid">
             <span class="navbar-brand mb-0 h1">
-                <i class="bi bi-diagram-3"></i> KEA DHCP Lease Manager
+                <i class="bi bi-diagram-3 version-toggle" id="versionToggle" title="Click to toggle version"></i> KEA DHCP Lease Manager
+                <span class="version-number" id="versionNumber" style="display: none;">v0.9.6</span>
             </span>
             <div class="d-flex align-items-center">
                 <span id="connection-status" class="text-white me-3">
@@ -478,6 +488,9 @@
             deleteReservationModal = new bootstrap.Modal(document.getElementById('deleteReservationModal'));
             configModal = new bootstrap.Modal(document.getElementById('configModal'));
             
+            // Setup version toggle
+            document.getElementById('versionToggle').addEventListener('click', toggleVersion);
+            
             // Check health first to detect unconfigured state
             checkHealth().then(healthData => {
                 if (healthData && healthData.status === 'unconfigured') {
@@ -497,6 +510,15 @@
             document.getElementById('search-filter').addEventListener('input', filterLeases);
             document.getElementById('subnet-filter').addEventListener('change', filterLeases);
         });
+
+        function toggleVersion() {
+            const versionNumber = document.getElementById('versionNumber');
+            if (versionNumber.style.display === 'none') {
+                versionNumber.style.display = 'inline';
+            } else {
+                versionNumber.style.display = 'none';
+            }
+        }
 
         async function checkHealth() {
             try {
