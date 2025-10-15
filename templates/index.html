@@ -205,16 +205,16 @@
     <div class="modal fade" id="reservationsModal" tabindex="-1">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
-                <div class="modal-header">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <h5 class="modal-title">
                         <i class="bi bi-bookmark-check"></i> Current Reservations
                     </h5>
-                    <div class="ms-auto me-2">
+                    <div style="display: flex; align-items: center; gap: 10px;">
                         <div class="btn-group">
                             <button class="btn btn-info btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-download"></i> Import/Export
                             </button>
-                            <ul class="dropdown-menu">
+                            <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="#" onclick="exportReservations(); return false;">
                                     <i class="bi bi-download"></i> Export Reservations
                                 </a></li>
@@ -223,8 +223,8 @@
                                 </a></li>
                             </ul>
                         </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div id="reservations-loading" class="text-center py-3">
@@ -1297,6 +1297,25 @@
             }, 5000);
         }
 
+        function showAlertInModal(type, message) {
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type} alert-dismissible fade show mb-3`;
+            alert.innerHTML = `
+                <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // Insert at the top of the reservations modal body
+            const modalBody = document.querySelector('#reservationsModal .modal-body');
+            const firstChild = modalBody.firstChild;
+            modalBody.insertBefore(alert, firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+
         function showFirstStartBanner() {
             const banner = document.createElement('div');
             banner.id = 'first-start-banner';
@@ -1442,10 +1461,11 @@
                 // Trigger file download
                 window.location.href = url;
                 
-                showAlert('success', 'Reservations export started. Check your downloads folder.');
+                // Show success message in the modal
+                showAlertInModal('success', 'Reservations export started. Check your downloads folder.');
             } catch (error) {
                 console.error('Export failed:', error);
-                alert(`Error exporting reservations: ${error.message}`);
+                showAlertInModal('danger', `Error exporting reservations: ${error.message}`);
             }
         }
 
@@ -1551,6 +1571,51 @@
                     if (data.success_count > 0) {
                         await loadReservations();
                         setTimeout(() => loadLeases(), 1000);
+                        
+                        // Refresh the reservations modal view if it's open
+                        if (reservationsModal._isShown) {
+                            // Reload the reservations table
+                            const tbody = document.getElementById('reservations-tbody');
+                            tbody.innerHTML = '';
+                            
+                            if (allReservations.length === 0) {
+                                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No reservations found</td></tr>';
+                            } else {
+                                // Sort reservations by IP address
+                                const sortedReservations = [...allReservations].sort((a, b) => {
+                                    const ipA = a['ip-address'].split('.').map(num => parseInt(num));
+                                    const ipB = b['ip-address'].split('.').map(num => parseInt(num));
+                                    
+                                    for (let i = 0; i < 4; i++) {
+                                        if (ipA[i] !== ipB[i]) {
+                                            return ipA[i] - ipB[i];
+                                        }
+                                    }
+                                    return 0;
+                                });
+                                
+                                sortedReservations.forEach(res => {
+                                    const row = document.createElement('tr');
+                                    row.innerHTML = `
+                                        <td><strong>${res['ip-address']}</strong></td>
+                                        <td><code>${res['hw-address']}</code></td>
+                                        <td>${res.hostname || '<em>none</em>'}</td>
+                                        <td>${res.subnet || res['subnet-id']}</td>
+                                        <td>
+                                            <button class="btn btn-primary btn-sm action-btn me-1" 
+                                                    onclick='editReservation(${JSON.stringify(res)})'>
+                                                <i class="bi bi-pencil"></i> Edit
+                                            </button>
+                                            <button class="btn btn-danger btn-sm action-btn" 
+                                                    onclick='deleteReservation(${JSON.stringify(res)})'>
+                                                <i class="bi bi-trash"></i> Delete
+                                            </button>
+                                        </td>
+                                    `;
+                                    tbody.appendChild(row);
+                                });
+                            }
+                        }
                     }
                 } else {
                     // Show error
