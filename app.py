@@ -44,6 +44,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def get_version():
+    """
+    Read version from version.txt file.
+    Returns version string or 'unknown' if file not found.
+    """
+    version_file = os.path.join(os.path.dirname(__file__), 'version.txt')
+    try:
+        with open(version_file, 'r') as f:
+            return f.read().strip()
+    except Exception as e:
+        logger.warning(f"Could not read version file: {e}")
+        return 'unknown'
+
 def load_config():
     """
     Load configuration from file, with caching based on file modification time.
@@ -150,7 +163,8 @@ def is_config_valid():
 @app.route('/')
 def index():
     """Render the main page"""
-    return render_template('index.html')
+    version = get_version()
+    return render_template('index.html', version=version)
 
 
 @app.route('/api/health', methods=['GET'])

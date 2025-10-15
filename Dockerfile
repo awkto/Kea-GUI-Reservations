@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application files
 COPY app.py .
 COPY kea_client.py .
+COPY version.txt .
 COPY templates/ ./templates/
 
 # Create volume mount point for config
