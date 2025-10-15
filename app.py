@@ -229,6 +229,53 @@ def get_reservations():
         }), 500
 
 
+@app.route('/api/reservations', methods=['POST'])
+def create_reservation():
+    """Create a new DHCP reservation"""
+    try:
+        client = get_kea_client()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        ip_address = data.get('ip_address')
+        hw_address = data.get('hw_address')
+        hostname = data.get('hostname', '')
+        subnet_id = data.get('subnet_id')
+        
+        if not ip_address or not hw_address:
+            return jsonify({
+                'success': False,
+                'error': 'ip_address and hw_address are required'
+            }), 400
+        
+        logger.info(f"Creating reservation: IP={ip_address}, MAC={hw_address}")
+        
+        result = client.create_reservation(
+            ip_address=ip_address,
+            hw_address=hw_address,
+            hostname=hostname,
+            subnet_id=subnet_id
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully created reservation for {ip_address}',
+            'reservation': result
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error creating reservation: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/promote', methods=['POST'])
 def promote_lease():
     """Promote a lease to a permanent reservation"""
@@ -528,6 +575,163 @@ def delete_reservation(ip_address):
         }), 200
     except Exception as e:
         logger.error(f"Error deleting reservation: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/reservations/export', methods=['GET'])
+def export_reservations():
+    """Export all DHCP reservations to JSON file"""
+    try:
+        client = get_kea_client()
+        subnet_id = request.args.get('subnet_id', type=int)
+        reservations = client.get_reservations(subnet_id=subnet_id)
+        
+        # Format reservations for export
+        export_data = {
+            'export_date': __import__('datetime').datetime.now().isoformat(),
+            'total_count': len(reservations),
+            'reservations': reservations
+        }
+        
+        from flask import make_response
+        import json
+        
+        response = make_response(json.dumps(export_data, indent=2))
+        response.headers['Content-Type'] = 'application/json'
+        response.headers['Content-Disposition'] = 'attachment; filename=dhcp_reservations_export.json'
+        
+        logger.info(f"Exported {len(reservations)} reservations")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error exporting reservations: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/reservations/import', methods=['POST'])
+def import_reservations():
+    """Import DHCP reservations from uploaded JSON file"""
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'No file provided'
+            }), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'No file selected'
+            }), 400
+        
+        # Read and parse JSON file
+        import json
+        try:
+            file_content = file.read().decode('utf-8')
+            import_data = json.loads(file_content)
+        except json.JSONDecodeError as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid JSON file: {str(e)}'
+            }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Failed to read file: {str(e)}'
+            }), 400
+        
+        # Extract reservations from import data
+        if isinstance(import_data, dict) and 'reservations' in import_data:
+            reservations_to_import = import_data['reservations']
+        elif isinstance(import_data, list):
+            reservations_to_import = import_data
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid file format. Expected JSON with "reservations" array or array of reservations.'
+            }), 400
+        
+        if not isinstance(reservations_to_import, list):
+            return jsonify({
+                'success': False,
+                'error': 'Reservations data must be an array'
+            }), 400
+        
+        # Import reservations one by one
+        client = get_kea_client()
+        success_count = 0
+        failed_count = 0
+        failed_items = []
+        
+        for idx, reservation in enumerate(reservations_to_import):
+            try:
+                # Validate required fields
+                ip_address = reservation.get('ip-address')
+                hw_address = reservation.get('hw-address')
+                
+                if not ip_address or not hw_address:
+                    failed_count += 1
+                    failed_items.append({
+                        'index': idx + 1,
+                        'ip': ip_address or 'N/A',
+                        'error': 'Missing required fields (ip-address or hw-address)'
+                    })
+                    continue
+                
+                hostname = reservation.get('hostname', '')
+                subnet_id = reservation.get('subnet-id')
+                
+                # Attempt to create reservation
+                client.create_reservation(
+                    ip_address=ip_address,
+                    hw_address=hw_address,
+                    hostname=hostname,
+                    subnet_id=subnet_id
+                )
+                
+                success_count += 1
+                logger.info(f"Imported reservation: IP={ip_address}, MAC={hw_address}")
+                
+            except Exception as e:
+                failed_count += 1
+                error_msg = str(e)
+                failed_items.append({
+                    'index': idx + 1,
+                    'ip': reservation.get('ip-address', 'N/A'),
+                    'mac': reservation.get('hw-address', 'N/A'),
+                    'error': error_msg
+                })
+                logger.warning(f"Failed to import reservation {idx + 1}: {error_msg}")
+                # Continue with next reservation
+        
+        # Prepare response
+        response_data = {
+            'success': True,
+            'total': len(reservations_to_import),
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'message': f'{success_count} reservation(s) imported successfully. {failed_count} reservation(s) failed to import.'
+        }
+        
+        if failed_count > 0:
+            response_data['failed_items'] = failed_items
+            response_data['hint'] = 'Check if you have duplicates or reservations outside the subnet range.'
+        
+        logger.info(f"Import completed: {success_count} succeeded, {failed_count} failed")
+        
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        logger.error(f"Error importing reservations: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

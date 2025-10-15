@@ -461,11 +461,65 @@ class KeaClient:
             self._send_command("reservation-del", ["dhcp4"], arguments)
             logger.info(f"Deleted reservation: IP={ip_address}")
         except CommandNotSupportedException as e:
-            logger.error(f"reservation-del not supported: {e}")
-            raise Exception(
-                "KEA reservation commands not available. "
-                "Please enable the 'host_cmds' hook library in your KEA configuration."
-            )
+            logger.warning(f"reservation-del not supported, using config-set fallback: {e}")
+            # Fallback: Delete reservation via config modification
+            self._delete_reservation_via_config(ip_address, subnet_id)
+        except Exception as e:
+            logger.error(f"Unexpected error in delete_reservation: {type(e).__name__}: {e}")
+            raise
+    
+    def _delete_reservation_via_config(self, ip_address: str, subnet_id: Optional[int] = None):
+        """
+        Delete reservation by modifying the configuration (fallback when host_cmds not available)
+        
+        Args:
+            ip_address: IP address of the reservation to delete
+            subnet_id: Optional subnet ID
+        """
+        # Get current configuration
+        result = self._send_command("config-get", ["dhcp4"])
+        config = result.get('arguments', {})
+        dhcp4_config = config.get('Dhcp4', {})
+        
+        # Find the target subnet and reservation
+        subnets = dhcp4_config.get('subnet4', [])
+        reservation_found = False
+        
+        for subnet in subnets:
+            current_subnet_id = subnet.get('id')
+            
+            # If subnet_id specified, only look in that subnet
+            if subnet_id is not None and current_subnet_id != subnet_id:
+                continue
+            
+            # Check if this subnet has the reservation
+            if 'reservations' in subnet:
+                original_count = len(subnet['reservations'])
+                # Filter out the reservation with matching IP
+                subnet['reservations'] = [
+                    r for r in subnet['reservations'] 
+                    if r.get('ip-address') != ip_address
+                ]
+                new_count = len(subnet['reservations'])
+                
+                if new_count < original_count:
+                    reservation_found = True
+                    logger.info(f"Found and removed reservation for {ip_address} from subnet {current_subnet_id}")
+                    
+                    # If subnet_id was specified, we can stop searching
+                    if subnet_id is not None:
+                        break
+        
+        if not reservation_found:
+            raise Exception(f"Reservation for IP {ip_address} not found")
+        
+        # Apply the updated configuration
+        set_arguments = {
+            "Dhcp4": dhcp4_config
+        }
+        
+        self._send_command("config-set", ["dhcp4"], set_arguments)
+        logger.info(f"Deleted reservation via config-set: IP={ip_address}")
     
     def get_subnets(self) -> List[Dict]:
         """

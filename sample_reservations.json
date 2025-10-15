@@ -1,0 +1,27 @@
+{
+  "export_date": "2025-10-15T12:00:00",
+  "total_count": 3,
+  "reservations": [
+    {
+      "ip-address": "192.168.1.100",
+      "hw-address": "aa:bb:cc:dd:ee:01",
+      "hostname": "device1",
+      "subnet-id": 1,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "ip-address": "192.168.1.101",
+      "hw-address": "aa:bb:cc:dd:ee:02",
+      "hostname": "device2",
+      "subnet-id": 1,
+      "subnet": "192.168.1.0/24"
+    },
+    {
+      "ip-address": "192.168.1.102",
+      "hw-address": "aa:bb:cc:dd:ee:03",
+      "hostname": "",
+      "subnet-id": 1,
+      "subnet": "192.168.1.0/24"
+    }
+  ]
+}

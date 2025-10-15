@@ -7,6 +7,7 @@ A web-based GUI for promoting KEA DHCP leases to permanent reservations.
 - Connect to KEA DHCP server via Control Agent API
 - View active DHCPv4 leases
 - Promote leases to permanent reservations with a single click
+- **Import/Export DHCP reservations** - Backup and restore reservations easily
 - Simple, intuitive web interface
 
 ## Architecture
@@ -202,15 +203,79 @@ docker run -d -p 5000:5000 -v $(pwd)/config.yaml:/app/config/config.yaml:ro kea-
 - `GET /api/leases` - Fetch all DHCPv4 leases
 - `POST /api/promote` - Promote a lease to reservation
 - `GET /api/reservations` - List current reservations
+- `POST /api/reservations` - Create a new reservation
+- `DELETE /api/reservation/<ip>` - Delete a reservation
+- `GET /api/reservations/export` - Export all reservations to JSON file
+- `POST /api/reservations/import` - Import reservations from JSON file
 - `GET /api/health` - Health check
 
 ## Usage
+
+### Managing Leases and Reservations
 
 1. Access the web interface
 2. View the list of active DHCP leases
 3. Click "Promote" next to any lease
 4. Confirm the action
 5. The lease is converted to a permanent reservation in KEA
+
+### Import/Export Reservations
+
+**Export Reservations:**
+1. Click the "Import/Export" dropdown button
+2. Select "Export Reservations"
+3. A JSON file will be downloaded to your machine containing all current reservations
+4. You can optionally filter by subnet before exporting
+
+**Import Reservations:**
+1. Click the "Import/Export" dropdown button
+2. Select "Import Reservations"
+3. Choose a JSON file from your computer (see `sample_reservations.json` for format)
+4. Click "Import" to begin the process
+5. The system will:
+   - Process each reservation one by one
+   - Continue importing even if individual reservations fail
+   - Display a summary showing:
+     - Number of successfully imported reservations
+     - Number of failed imports
+     - Details of any failures (duplicate IPs, subnet mismatches, etc.)
+
+**Import File Format:**
+The import file should be a JSON file with this structure:
+```json
+{
+  "reservations": [
+    {
+      "ip-address": "192.168.1.100",
+      "hw-address": "aa:bb:cc:dd:ee:01",
+      "hostname": "device1",
+      "subnet-id": 1
+    }
+  ]
+}
+```
+
+Or simply an array of reservations:
+```json
+[
+  {
+    "ip-address": "192.168.1.100",
+    "hw-address": "aa:bb:cc:dd:ee:01",
+    "hostname": "device1",
+    "subnet-id": 1
+  }
+]
+```
+
+See `sample_reservations.json` in the repository for a complete example.
+
+**Note:** Import failures can occur due to:
+- Duplicate IP addresses (reservation already exists)
+- IP addresses outside the subnet range
+- Invalid MAC addresses
+- Missing required fields
+
+The import process will continue even if individual reservations fail, and you'll receive a detailed report at the end.
 
 ## Security Considerations
 
