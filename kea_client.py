@@ -543,3 +543,191 @@ class KeaClient:
             })
         
         return subnet_list
+    
+    def get_full_config(self) -> Dict:
+        """
+        Get the complete DHCPv4 configuration
+        
+        Returns:
+            Complete configuration dictionary
+        """
+        result = self._send_command("config-get", ["dhcp4"])
+        config = result.get('arguments', {})
+        return config.get('Dhcp4', {})
+    
+    def get_subnet_details(self, subnet_id: int) -> Optional[Dict]:
+        """
+        Get detailed configuration for a specific subnet
+        
+        Args:
+            subnet_id: Subnet ID to retrieve
+            
+        Returns:
+            Subnet configuration dictionary or None if not found
+        """
+        config = self.get_full_config()
+        subnets = config.get('subnet4', [])
+        
+        for subnet in subnets:
+            if subnet.get('id') == subnet_id:
+                return subnet
+        
+        return None
+    
+    def create_subnet(self, subnet_config: Dict) -> Dict:
+        """
+        Create a new subnet in the DHCPv4 configuration
+        
+        Args:
+            subnet_config: Subnet configuration dictionary containing:
+                - id: Subnet ID (required)
+                - subnet: Network CIDR (required, e.g., "192.168.1.0/24")
+                - pools: List of IP pools (optional)
+                - valid-lifetime: Lease time in seconds (optional)
+                - option-data: DHCP options (optional)
+                - And other subnet parameters
+        
+        Returns:
+            Created subnet configuration
+        """
+        # Get current configuration
+        dhcp4_config = self.get_full_config()
+        
+        # Ensure subnet4 array exists
+        if 'subnet4' not in dhcp4_config:
+            dhcp4_config['subnet4'] = []
+        
+        # Check if subnet ID already exists
+        for existing_subnet in dhcp4_config['subnet4']:
+            if existing_subnet.get('id') == subnet_config.get('id'):
+                raise Exception(f"Subnet with ID {subnet_config['id']} already exists")
+        
+        # Add the new subnet
+        dhcp4_config['subnet4'].append(subnet_config)
+        
+        # Apply the updated configuration
+        self._set_config(dhcp4_config)
+        
+        logger.info(f"Created subnet: {subnet_config.get('subnet')} (ID: {subnet_config.get('id')})")
+        return subnet_config
+    
+    def update_subnet(self, subnet_id: int, subnet_config: Dict) -> Dict:
+        """
+        Update an existing subnet configuration
+        
+        Args:
+            subnet_id: ID of the subnet to update
+            subnet_config: Updated subnet configuration
+            
+        Returns:
+            Updated subnet configuration
+        """
+        # Get current configuration
+        dhcp4_config = self.get_full_config()
+        
+        # Find and update the subnet
+        subnet_found = False
+        subnets = dhcp4_config.get('subnet4', [])
+        
+        for i, subnet in enumerate(subnets):
+            if subnet.get('id') == subnet_id:
+                # Merge the update with existing config
+                # Ensure the ID remains consistent
+                subnet_config['id'] = subnet_id
+                subnets[i] = subnet_config
+                subnet_found = True
+                break
+        
+        if not subnet_found:
+            raise Exception(f"Subnet with ID {subnet_id} not found")
+        
+        # Apply the updated configuration
+        self._set_config(dhcp4_config)
+        
+        logger.info(f"Updated subnet ID {subnet_id}")
+        return subnet_config
+    
+    def delete_subnet(self, subnet_id: int):
+        """
+        Delete a subnet from the configuration
+        
+        Args:
+            subnet_id: ID of the subnet to delete
+        """
+        # Get current configuration
+        dhcp4_config = self.get_full_config()
+        
+        # Filter out the subnet
+        original_subnets = dhcp4_config.get('subnet4', [])
+        filtered_subnets = [s for s in original_subnets if s.get('id') != subnet_id]
+        
+        if len(filtered_subnets) == len(original_subnets):
+            raise Exception(f"Subnet with ID {subnet_id} not found")
+        
+        dhcp4_config['subnet4'] = filtered_subnets
+        
+        # Apply the updated configuration
+        self._set_config(dhcp4_config)
+        
+        logger.info(f"Deleted subnet ID {subnet_id}")
+    
+    def update_global_options(self, options: Dict) -> Dict:
+        """
+        Update global DHCP options
+        
+        Args:
+            options: Dictionary containing global options like:
+                - valid-lifetime: Default lease time
+                - renew-timer: T1 renewal timer
+                - rebind-timer: T2 rebinding timer
+                - option-data: Global DHCP options
+        
+        Returns:
+            Updated configuration
+        """
+        # Get current configuration
+        dhcp4_config = self.get_full_config()
+        
+        # Update global options
+        for key, value in options.items():
+            if value is not None:
+                dhcp4_config[key] = value
+        
+        # Apply the updated configuration
+        self._set_config(dhcp4_config)
+        
+        logger.info(f"Updated global options")
+        return dhcp4_config
+    
+    def _set_config(self, dhcp4_config: Dict):
+        """
+        Apply a new DHCPv4 configuration
+        
+        Args:
+            dhcp4_config: Complete DHCPv4 configuration dictionary
+        """
+        set_arguments = {
+            "Dhcp4": dhcp4_config
+        }
+        
+        self._send_command("config-set", ["dhcp4"], set_arguments)
+        logger.info("Configuration updated successfully")
+    
+    def get_global_parameters(self) -> Dict:
+        """
+        Get global DHCP parameters
+        
+        Returns:
+            Dictionary with global parameters like lease times, timers, etc.
+        """
+        config = self.get_full_config()
+        
+        return {
+            'valid-lifetime': config.get('valid-lifetime', 7200),
+            'renew-timer': config.get('renew-timer'),
+            'rebind-timer': config.get('rebind-timer'),
+            'option-data': config.get('option-data', []),
+            'interfaces-config': config.get('interfaces-config', {}),
+            'lease-database': config.get('lease-database', {}),
+            'expired-leases-processing': config.get('expired-leases-processing', {}),
+        }

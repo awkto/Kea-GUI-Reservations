@@ -752,6 +752,215 @@ def import_reservations():
         }), 500
 
 
+@app.route('/api/dhcp/config', methods=['GET'])
+def get_dhcp_config():
+    """Get complete DHCP configuration"""
+    try:
+        client = get_kea_client()
+        config = client.get_full_config()
+        return jsonify({
+            'success': True,
+            'config': config
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching DHCP config: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/global', methods=['GET'])
+def get_global_parameters():
+    """Get global DHCP parameters"""
+    try:
+        client = get_kea_client()
+        params = client.get_global_parameters()
+        return jsonify({
+            'success': True,
+            'parameters': params
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching global parameters: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/global', methods=['PUT'])
+def update_global_parameters():
+    """Update global DHCP parameters"""
+    try:
+        client = get_kea_client()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        options = data.get('options', {})
+        client.update_global_options(options)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Global parameters updated successfully'
+        }), 200
+    except Exception as e:
+        logger.error(f"Error updating global parameters: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/subnets', methods=['GET'])
+def get_dhcp_subnets():
+    """Get all DHCP subnets with detailed configuration"""
+    try:
+        client = get_kea_client()
+        config = client.get_full_config()
+        subnets = config.get('subnet4', [])
+        
+        return jsonify({
+            'success': True,
+            'subnets': subnets,
+            'count': len(subnets)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching DHCP subnets: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/subnets/<int:subnet_id>', methods=['GET'])
+def get_subnet_details(subnet_id):
+    """Get detailed configuration for a specific subnet"""
+    try:
+        client = get_kea_client()
+        subnet = client.get_subnet_details(subnet_id)
+        
+        if subnet is None:
+            return jsonify({
+                'success': False,
+                'error': f'Subnet {subnet_id} not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'subnet': subnet
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching subnet details: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/subnets', methods=['POST'])
+def create_dhcp_subnet():
+    """Create a new DHCP subnet"""
+    try:
+        client = get_kea_client()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        subnet_config = data.get('subnet')
+        if not subnet_config:
+            return jsonify({
+                'success': False,
+                'error': 'Subnet configuration is required'
+            }), 400
+        
+        # Validate required fields
+        if 'id' not in subnet_config or 'subnet' not in subnet_config:
+            return jsonify({
+                'success': False,
+                'error': 'Subnet ID and network CIDR are required'
+            }), 400
+        
+        result = client.create_subnet(subnet_config)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully created subnet {subnet_config["subnet"]}',
+            'subnet': result
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error creating subnet: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/subnets/<int:subnet_id>', methods=['PUT'])
+def update_dhcp_subnet(subnet_id):
+    """Update an existing DHCP subnet"""
+    try:
+        client = get_kea_client()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        subnet_config = data.get('subnet')
+        if not subnet_config:
+            return jsonify({
+                'success': False,
+                'error': 'Subnet configuration is required'
+            }), 400
+        
+        result = client.update_subnet(subnet_id, subnet_config)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully updated subnet {subnet_id}',
+            'subnet': result
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error updating subnet: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/dhcp/subnets/<int:subnet_id>', methods=['DELETE'])
+def delete_dhcp_subnet(subnet_id):
+    """Delete a DHCP subnet"""
+    try:
+        client = get_kea_client()
+        client.delete_subnet(subnet_id)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully deleted subnet {subnet_id}'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error deleting subnet: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     runtime_config = load_config()
     app.run(

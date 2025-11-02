@@ -62,8 +62,11 @@
                     <span class="connection-status offline"></span>
                     <span id="status-text">Checking connection...</span>
                 </span>
+                <button class="btn btn-outline-light btn-sm me-2" onclick="showDhcpConfigModal()">
+                    <i class="bi bi-hdd-network"></i> DHCP Config
+                </button>
                 <button class="btn btn-outline-light btn-sm" onclick="showConfigModal()">
-                    <i class="bi bi-gear"></i> Edit Configuration
+                    <i class="bi bi-gear"></i> App Settings
                 </button>
             </div>
         </div>
@@ -549,6 +552,226 @@
         </div>
     </div>
 
+    <!-- DHCP Configuration Modal -->
+    <div class="modal fade" id="dhcpConfigModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-hdd-network"></i> DHCP Configuration Manager
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Tab Navigation -->
+                    <ul class="nav nav-tabs mb-3" id="dhcpConfigTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="subnets-tab" data-bs-toggle="tab" data-bs-target="#subnets-panel" type="button">
+                                <i class="bi bi-diagram-3"></i> Subnets
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="global-tab" data-bs-toggle="tab" data-bs-target="#global-panel" type="button">
+                                <i class="bi bi-globe"></i> Global Options
+                            </button>
+                        </li>
+                    </ul>
+
+                    <!-- Tab Content -->
+                    <div class="tab-content" id="dhcpConfigTabContent">
+                        <!-- Subnets Panel -->
+                        <div class="tab-pane fade show active" id="subnets-panel" role="tabpanel">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">Configured Subnets</h6>
+                                <button class="btn btn-success btn-sm" onclick="showAddSubnetModal()">
+                                    <i class="bi bi-plus-circle"></i> Add Subnet
+                                </button>
+                            </div>
+                            
+                            <div id="subnets-loading" class="text-center py-3">
+                                <div class="spinner-border text-primary" role="status"></div>
+                            </div>
+                            
+                            <div id="subnets-content" style="display: none;">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Network</th>
+                                                <th>Pools</th>
+                                                <th>Lease Time</th>
+                                                <th>Options</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dhcp-subnets-tbody">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Global Options Panel -->
+                        <div class="tab-pane fade" id="global-panel" role="tabpanel">
+                            <div id="global-loading" class="text-center py-3">
+                                <div class="spinner-border text-primary" role="status"></div>
+                            </div>
+                            
+                            <form id="global-options-form" style="display: none;">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i>
+                                    Configure global DHCP parameters that apply to all subnets unless overridden.
+                                </div>
+                                
+                                <h6 class="border-bottom pb-2 mb-3">Lease Timers</h6>
+                                
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label for="global-valid-lifetime" class="form-label">Valid Lifetime (seconds)</label>
+                                        <input type="number" class="form-control" id="global-valid-lifetime" min="60">
+                                        <div class="form-text">Default lease time (e.g., 7200 = 2 hours)</div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label for="global-renew-timer" class="form-label">Renew Timer (T1)</label>
+                                        <input type="number" class="form-control" id="global-renew-timer" min="0">
+                                        <div class="form-text">Leave empty for auto (50% of valid-lifetime)</div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label for="global-rebind-timer" class="form-label">Rebind Timer (T2)</label>
+                                        <input type="number" class="form-control" id="global-rebind-timer" min="0">
+                                        <div class="form-text">Leave empty for auto (87.5% of valid-lifetime)</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-flex justify-content-end mt-3">
+                                    <button type="button" class="btn btn-primary" onclick="saveGlobalOptions()">
+                                        <i class="bi bi-save"></i> Save Global Options
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Subnet Modal -->
+    <div class="modal fade" id="subnetModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="subnet-modal-title">
+                        <i class="bi bi-plus-circle"></i> Add Subnet
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="subnet-form">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            Configure a DHCP subnet with IP pools and options.
+                        </div>
+                        
+                        <h6 class="border-bottom pb-2 mb-3">Basic Configuration</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="subnet-id" class="form-label">Subnet ID *</label>
+                                <input type="number" class="form-control" id="subnet-id" min="1" required>
+                                <div class="form-text">Unique identifier for this subnet</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="subnet-network" class="form-label">Network (CIDR) *</label>
+                                <input type="text" class="form-control" id="subnet-network" 
+                                       placeholder="192.168.1.0/24" required>
+                                <div class="form-text">Network address with prefix (e.g., 192.168.1.0/24)</div>
+                            </div>
+                        </div>
+                        
+                        <h6 class="border-bottom pb-2 mb-3">IP Pools</h6>
+                        
+                        <div id="pools-container">
+                            <div class="pool-entry mb-3 p-3 border rounded">
+                                <div class="row">
+                                    <div class="col-md-5">
+                                        <label class="form-label">Pool Start IP *</label>
+                                        <input type="text" class="form-control pool-start" 
+                                               placeholder="192.168.1.100" required>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label">Pool End IP *</label>
+                                        <input type="text" class="form-control pool-end" 
+                                               placeholder="192.168.1.200" required>
+                                    </div>
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button type="button" class="btn btn-danger btn-sm" onclick="removePool(this)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-secondary btn-sm mb-3" onclick="addPool()">
+                            <i class="bi bi-plus"></i> Add Another Pool
+                        </button>
+                        
+                        <h6 class="border-bottom pb-2 mb-3">Lease Configuration</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="subnet-valid-lifetime" class="form-label">Lease Time (seconds)</label>
+                                <input type="number" class="form-control" id="subnet-valid-lifetime" 
+                                       min="60" placeholder="7200">
+                                <div class="form-text">Leave empty to use global default</div>
+                            </div>
+                        </div>
+                        
+                        <h6 class="border-bottom pb-2 mb-3">Common DHCP Options</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="subnet-router" class="form-label">Router (Gateway)</label>
+                                <input type="text" class="form-control" id="subnet-router" 
+                                       placeholder="192.168.1.1">
+                                <div class="form-text">Default gateway (Option 3)</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="subnet-dns" class="form-label">DNS Servers</label>
+                                <input type="text" class="form-control" id="subnet-dns" 
+                                       placeholder="8.8.8.8, 8.8.4.4">
+                                <div class="form-text">Comma-separated DNS servers (Option 6)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="subnet-domain-name" class="form-label">Domain Name</label>
+                                <input type="text" class="form-control" id="subnet-domain-name" 
+                                       placeholder="example.local">
+                                <div class="form-text">DNS domain name (Option 15)</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="subnet-ntp" class="form-label">NTP Servers</label>
+                                <input type="text" class="form-control" id="subnet-ntp" 
+                                       placeholder="0.pool.ntp.org">
+                                <div class="form-text">Comma-separated NTP servers (Option 42)</div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveSubnet()">
+                        <i class="bi bi-check-circle"></i> Save Subnet
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let allLeases = [];
@@ -563,6 +786,9 @@
         let deleteReservationModal = null;
         let configModal = null;
         let importModal = null;
+        let dhcpConfigModal = null;
+        let subnetModal = null;
+        let currentEditingSubnet = null;
 
         // Initialize modals
         document.addEventListener('DOMContentLoaded', function() {
@@ -573,6 +799,8 @@
             deleteReservationModal = new bootstrap.Modal(document.getElementById('deleteReservationModal'));
             configModal = new bootstrap.Modal(document.getElementById('configModal'));
             importModal = new bootstrap.Modal(document.getElementById('importModal'));
+            dhcpConfigModal = new bootstrap.Modal(document.getElementById('dhcpConfigModal'));
+            subnetModal = new bootstrap.Modal(document.getElementById('subnetModal'));
             
             // Setup version toggle
             document.getElementById('versionToggle').addEventListener('click', toggleVersion);
@@ -1638,6 +1866,410 @@
                         ${error.message}
                     </div>
                 `;
+            }
+        }
+
+        // DHCP Configuration Functions
+        async function showDhcpConfigModal() {
+            dhcpConfigModal.show();
+            
+            // Load subnets by default
+            await loadDhcpSubnets();
+        }
+
+        async function loadDhcpSubnets() {
+            document.getElementById('subnets-loading').style.display = 'block';
+            document.getElementById('subnets-content').style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/dhcp/subnets');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const tbody = document.getElementById('dhcp-subnets-tbody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.subnets.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No subnets configured. Click "Add Subnet" to create one.</td></tr>';
+                    } else {
+                        data.subnets.forEach(subnet => {
+                            const pools = subnet.pools || [];
+                            const poolsText = pools.map(p => `${p.pool || `${p['pool-start']} - ${p['pool-end']}`}`).join(', ') || 'None';
+                            const leaseTime = subnet['valid-lifetime'] ? `${subnet['valid-lifetime']}s` : 'Global';
+                            const optionsCount = (subnet['option-data'] || []).length;
+                            
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td><strong>${subnet.id}</strong></td>
+                                <td><code>${subnet.subnet}</code></td>
+                                <td><small>${poolsText}</small></td>
+                                <td>${leaseTime}</td>
+                                <td><span class="badge bg-info">${optionsCount} options</span></td>
+                                <td>
+                                    <button class="btn btn-primary btn-sm me-1" onclick='editSubnet(${subnet.id})'>
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-danger btn-sm" onclick='deleteSubnet(${subnet.id})'>
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    }
+                    
+                    document.getElementById('subnets-loading').style.display = 'none';
+                    document.getElementById('subnets-content').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Failed to load DHCP subnets:', error);
+                alert('Failed to load DHCP subnets: ' + error.message);
+            }
+        }
+
+        async function loadGlobalOptions() {
+            document.getElementById('global-loading').style.display = 'block';
+            document.getElementById('global-options-form').style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/dhcp/global');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const params = data.parameters;
+                    
+                    document.getElementById('global-valid-lifetime').value = params['valid-lifetime'] || '';
+                    document.getElementById('global-renew-timer').value = params['renew-timer'] || '';
+                    document.getElementById('global-rebind-timer').value = params['rebind-timer'] || '';
+                    
+                    document.getElementById('global-loading').style.display = 'none';
+                    document.getElementById('global-options-form').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Failed to load global options:', error);
+                alert('Failed to load global options: ' + error.message);
+            }
+        }
+
+        // Tab change handler to lazy-load content
+        document.addEventListener('DOMContentLoaded', function() {
+            const globalTab = document.getElementById('global-tab');
+            if (globalTab) {
+                globalTab.addEventListener('shown.bs.tab', function() {
+                    loadGlobalOptions();
+                });
+            }
+        });
+
+        async function saveGlobalOptions() {
+            try {
+                const options = {
+                    'valid-lifetime': parseInt(document.getElementById('global-valid-lifetime').value) || null,
+                    'renew-timer': parseInt(document.getElementById('global-renew-timer').value) || null,
+                    'rebind-timer': parseInt(document.getElementById('global-rebind-timer').value) || null
+                };
+                
+                const response = await fetch('/api/dhcp/global', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ options })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('success', 'Global options updated successfully!');
+                } else {
+                    throw new Error(data.error || 'Failed to update global options');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function showAddSubnetModal() {
+            currentEditingSubnet = null;
+            document.getElementById('subnet-modal-title').innerHTML = '<i class="bi bi-plus-circle"></i> Add Subnet';
+            document.getElementById('subnet-form').reset();
+            
+            // Reset to single pool
+            const poolsContainer = document.getElementById('pools-container');
+            poolsContainer.innerHTML = `
+                <div class="pool-entry mb-3 p-3 border rounded">
+                    <div class="row">
+                        <div class="col-md-5">
+                            <label class="form-label">Pool Start IP *</label>
+                            <input type="text" class="form-control pool-start" 
+                                   placeholder="192.168.1.100" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Pool End IP *</label>
+                            <input type="text" class="form-control pool-end" 
+                                   placeholder="192.168.1.200" required>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="button" class="btn btn-danger btn-sm" onclick="removePool(this)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Enable subnet ID field for new subnets
+            document.getElementById('subnet-id').readOnly = false;
+            
+            subnetModal.show();
+        }
+
+        async function editSubnet(subnetId) {
+            try {
+                const response = await fetch(`/api/dhcp/subnets/${subnetId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentEditingSubnet = subnetId;
+                    const subnet = data.subnet;
+                    
+                    document.getElementById('subnet-modal-title').innerHTML = '<i class="bi bi-pencil"></i> Edit Subnet';
+                    
+                    // Populate basic fields
+                    document.getElementById('subnet-id').value = subnet.id;
+                    document.getElementById('subnet-id').readOnly = true; // Can't change ID
+                    document.getElementById('subnet-network').value = subnet.subnet;
+                    document.getElementById('subnet-valid-lifetime').value = subnet['valid-lifetime'] || '';
+                    
+                    // Populate pools
+                    const poolsContainer = document.getElementById('pools-container');
+                    poolsContainer.innerHTML = '';
+                    
+                    const pools = subnet.pools || [];
+                    if (pools.length === 0) {
+                        // Add empty pool entry
+                        pools.push({ pool: '' });
+                    }
+                    
+                    pools.forEach(pool => {
+                        const poolHtml = `
+                            <div class="pool-entry mb-3 p-3 border rounded">
+                                <div class="row">
+                                    <div class="col-md-5">
+                                        <label class="form-label">Pool Start IP *</label>
+                                        <input type="text" class="form-control pool-start" 
+                                               value="${pool['pool-start'] || pool.pool || ''}" 
+                                               placeholder="192.168.1.100" required>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label">Pool End IP *</label>
+                                        <input type="text" class="form-control pool-end" 
+                                               value="${pool['pool-end'] || ''}" 
+                                               placeholder="192.168.1.200" required>
+                                    </div>
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button type="button" class="btn btn-danger btn-sm" onclick="removePool(this)">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        poolsContainer.innerHTML += poolHtml;
+                    });
+                    
+                    // Populate DHCP options
+                    const options = subnet['option-data'] || [];
+                    const routerOpt = options.find(o => o.code === 3);
+                    const dnsOpt = options.find(o => o.code === 6);
+                    const domainOpt = options.find(o => o.code === 15);
+                    const ntpOpt = options.find(o => o.code === 42);
+                    
+                    document.getElementById('subnet-router').value = routerOpt ? routerOpt.data : '';
+                    document.getElementById('subnet-dns').value = dnsOpt ? dnsOpt.data : '';
+                    document.getElementById('subnet-domain-name').value = domainOpt ? domainOpt.data : '';
+                    document.getElementById('subnet-ntp').value = ntpOpt ? ntpOpt.data : '';
+                    
+                    subnetModal.show();
+                }
+            } catch (error) {
+                console.error('Failed to load subnet:', error);
+                alert('Failed to load subnet: ' + error.message);
+            }
+        }
+
+        async function saveSubnet() {
+            try {
+                // Collect form data
+                const subnetId = parseInt(document.getElementById('subnet-id').value);
+                const network = document.getElementById('subnet-network').value.trim();
+                
+                if (!subnetId || !network) {
+                    alert('Subnet ID and Network are required');
+                    return;
+                }
+                
+                // Collect pools
+                const pools = [];
+                const poolEntries = document.querySelectorAll('.pool-entry');
+                poolEntries.forEach(entry => {
+                    const start = entry.querySelector('.pool-start').value.trim();
+                    const end = entry.querySelector('.pool-end').value.trim();
+                    
+                    if (start && end) {
+                        pools.push({
+                            'pool': `${start} - ${end}`
+                        });
+                    }
+                });
+                
+                if (pools.length === 0) {
+                    alert('At least one IP pool is required');
+                    return;
+                }
+                
+                // Build subnet configuration
+                const subnetConfig = {
+                    id: subnetId,
+                    subnet: network,
+                    pools: pools
+                };
+                
+                // Add lease time if specified
+                const leaseTime = document.getElementById('subnet-valid-lifetime').value;
+                if (leaseTime) {
+                    subnetConfig['valid-lifetime'] = parseInt(leaseTime);
+                }
+                
+                // Add DHCP options
+                const optionData = [];
+                
+                const router = document.getElementById('subnet-router').value.trim();
+                if (router) {
+                    optionData.push({
+                        name: 'routers',
+                        code: 3,
+                        data: router
+                    });
+                }
+                
+                const dns = document.getElementById('subnet-dns').value.trim();
+                if (dns) {
+                    optionData.push({
+                        name: 'domain-name-servers',
+                        code: 6,
+                        data: dns
+                    });
+                }
+                
+                const domain = document.getElementById('subnet-domain-name').value.trim();
+                if (domain) {
+                    optionData.push({
+                        name: 'domain-name',
+                        code: 15,
+                        data: domain
+                    });
+                }
+                
+                const ntp = document.getElementById('subnet-ntp').value.trim();
+                if (ntp) {
+                    optionData.push({
+                        name: 'ntp-servers',
+                        code: 42,
+                        data: ntp
+                    });
+                }
+                
+                if (optionData.length > 0) {
+                    subnetConfig['option-data'] = optionData;
+                }
+                
+                // Send request
+                const url = currentEditingSubnet 
+                    ? `/api/dhcp/subnets/${currentEditingSubnet}`
+                    : '/api/dhcp/subnets';
+                const method = currentEditingSubnet ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subnet: subnetConfig })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    subnetModal.hide();
+                    showAlert('success', data.message);
+                    await loadDhcpSubnets();
+                    
+                    // Refresh subnet filter dropdown
+                    await loadSubnets();
+                } else {
+                    throw new Error(data.error || 'Failed to save subnet');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deleteSubnet(subnetId) {
+            if (!confirm(`Are you sure you want to delete subnet ${subnetId}? This will remove all associated reservations and cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/dhcp/subnets/${subnetId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('success', data.message);
+                    await loadDhcpSubnets();
+                    await loadSubnets();
+                } else {
+                    throw new Error(data.error || 'Failed to delete subnet');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function addPool() {
+            const poolsContainer = document.getElementById('pools-container');
+            const poolHtml = `
+                <div class="pool-entry mb-3 p-3 border rounded">
+                    <div class="row">
+                        <div class="col-md-5">
+                            <label class="form-label">Pool Start IP *</label>
+                            <input type="text" class="form-control pool-start" 
+                                   placeholder="192.168.1.100" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Pool End IP *</label>
+                            <input type="text" class="form-control pool-end" 
+                                   placeholder="192.168.1.200" required>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="button" class="btn btn-danger btn-sm" onclick="removePool(this)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            poolsContainer.insertAdjacentHTML('beforeend', poolHtml);
+        }
+
+        function removePool(button) {
+            const poolEntry = button.closest('.pool-entry');
+            const poolsContainer = document.getElementById('pools-container');
+            
+            // Don't allow removing the last pool
+            if (poolsContainer.querySelectorAll('.pool-entry').length > 1) {
+                poolEntry.remove();
+            } else {
+                alert('At least one pool is required');
             }
         }
 
