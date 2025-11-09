@@ -114,7 +114,9 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Visit `http://localhost:5000`
+Visit:
+- **Web UI:** `http://localhost:5000`
+- **API Documentation:** `http://localhost:5000/apidocs`
 
 ## Running with Docker
 
@@ -198,16 +200,36 @@ docker build -t kea-gui .
 docker run -d -p 5000:5000 -v $(pwd)/config.yaml:/app/config/config.yaml:ro kea-gui
 ```
 
-## API Endpoints
+## API Documentation
 
-- `GET /api/leases` - Fetch all DHCPv4 leases
-- `POST /api/promote` - Promote a lease to reservation
-- `GET /api/reservations` - List current reservations
+### Interactive API Explorer
+
+This application includes **Swagger/OpenAPI documentation** with an interactive API explorer:
+
+**📚 Access the API documentation at: `http://localhost:5000/apidocs`**
+
+The Swagger UI provides:
+- Complete API reference with request/response schemas
+- Interactive "Try it out" functionality to test endpoints directly
+- Example requests and responses for each endpoint
+- Parameter descriptions and validation rules
+
+### API Endpoints Summary
+
+- `GET /api/health` - Health check and KEA connectivity status
+- `GET /api/leases` - Fetch all DHCPv4 leases (optional: filter by subnet)
+- `GET /api/reservations` - List current reservations (optional: filter by subnet)
 - `POST /api/reservations` - Create a new reservation
+- `POST /api/promote` - Promote a lease to permanent reservation
 - `DELETE /api/reservation/<ip>` - Delete a reservation
 - `GET /api/reservations/export` - Export all reservations to JSON file
 - `POST /api/reservations/import` - Import reservations from JSON file
-- `GET /api/health` - Health check
+- `GET /api/subnets` - Get configured DHCP subnets
+- `POST /api/validate-ip` - Validate IP address against subnet
+- `GET /api/config` - Get current configuration (sanitized)
+- `POST /api/config` - Save configuration to file
+
+For detailed documentation including request/response schemas, visit `/apidocs` when the application is running.
 
 ## Usage
 

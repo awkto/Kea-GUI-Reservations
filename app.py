@@ -7,11 +7,66 @@ import os
 import logging
 from flask import Flask, render_template, jsonify, request
 import yaml
+from flasgger import Swagger
 
 from kea_client import KeaClient
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Initialize Swagger
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": 'apispec',
+            "route": '/apispec.json',
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/apidocs"
+}
+
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "KEA DHCP Reservations API",
+        "description": "API for managing KEA DHCP leases and reservations. Allows creating, listing, and promoting leases to permanent reservations.",
+        "version": "1.0.1",
+        "contact": {
+            "name": "KEA GUI Reservations",
+            "url": "https://github.com/awkto/kea-gui-reservations"
+        }
+    },
+    "schemes": ["http", "https"],
+    "tags": [
+        {
+            "name": "Health",
+            "description": "Health check and system status"
+        },
+        {
+            "name": "Leases",
+            "description": "DHCP lease operations"
+        },
+        {
+            "name": "Reservations",
+            "description": "DHCP reservation management"
+        },
+        {
+            "name": "Configuration",
+            "description": "System configuration"
+        },
+        {
+            "name": "Subnets",
+            "description": "Subnet information"
+        }
+    ]
+}
+
+swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -169,7 +224,43 @@ def index():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint
+    ---
+    tags:
+      - Health
+    summary: Check system health and KEA connectivity
+    description: Verifies that the application can connect to the KEA DHCP server and returns the connection status.
+    responses:
+      200:
+        description: Health check completed
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [healthy, unhealthy, unconfigured]
+              description: Overall system status
+            kea_connection:
+              type: string
+              enum: [ok, failed, not_configured]
+              description: KEA server connection status
+            message:
+              type: string
+              description: Additional status message (if unconfigured)
+            error:
+              type: string
+              description: Error message (if unhealthy)
+        examples:
+          healthy:
+            status: healthy
+            kea_connection: ok
+          unhealthy:
+            status: unhealthy
+            kea_connection: failed
+            error: Connection refused
+      503:
+        description: Service unavailable - KEA connection failed
+    """
     # Check if configuration is valid first
     if not is_config_valid():
         return jsonify({
@@ -197,7 +288,70 @@ def health_check():
 
 @app.route('/api/leases', methods=['GET'])
 def get_leases():
-    """Fetch all DHCPv4 leases"""
+    """Fetch all DHCPv4 leases
+    ---
+    tags:
+      - Leases
+    summary: Get all DHCP leases
+    description: Retrieves all active DHCPv4 leases from the KEA DHCP server. Optionally filter by subnet ID.
+    parameters:
+      - name: subnet_id
+        in: query
+        type: integer
+        required: false
+        description: Filter leases by subnet ID
+        example: 1
+    responses:
+      200:
+        description: Leases retrieved successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the operation succeeded
+            leases:
+              type: array
+              description: List of DHCP leases
+              items:
+                type: object
+                properties:
+                  ip-address:
+                    type: string
+                    description: Leased IP address
+                  hw-address:
+                    type: string
+                    description: MAC address of the client
+                  hostname:
+                    type: string
+                    description: Client hostname (if available)
+                  subnet-id:
+                    type: integer
+                    description: Subnet ID
+                  valid-lifetime:
+                    type: integer
+                    description: Lease validity duration in seconds
+            count:
+              type: integer
+              description: Total number of leases returned
+            unconfigured:
+              type: boolean
+              description: True if KEA server is not configured
+            error:
+              type: string
+              description: Error message (if failed)
+        examples:
+          success:
+            success: true
+            leases:
+              - ip-address: "192.168.1.100"
+                hw-address: "aa:bb:cc:dd:ee:01"
+                hostname: "client1"
+                subnet-id: 1
+            count: 1
+      500:
+        description: Internal server error
+    """
     # Check if configuration is valid first
     if not is_config_valid():
         return jsonify({
@@ -225,7 +379,64 @@ def get_leases():
 
 @app.route('/api/reservations', methods=['GET'])
 def get_reservations():
-    """Fetch all DHCPv4 reservations"""
+    """Fetch all DHCPv4 reservations
+    ---
+    tags:
+      - Reservations
+    summary: Get all DHCP reservations
+    description: Retrieves all permanent DHCPv4 reservations from the KEA DHCP server. Optionally filter by subnet ID.
+    parameters:
+      - name: subnet_id
+        in: query
+        type: integer
+        required: false
+        description: Filter reservations by subnet ID
+        example: 1
+    responses:
+      200:
+        description: Reservations retrieved successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the operation succeeded
+            reservations:
+              type: array
+              description: List of DHCP reservations
+              items:
+                type: object
+                properties:
+                  ip-address:
+                    type: string
+                    description: Reserved IP address
+                  hw-address:
+                    type: string
+                    description: MAC address bound to this reservation
+                  hostname:
+                    type: string
+                    description: Hostname for this reservation
+                  subnet-id:
+                    type: integer
+                    description: Subnet ID
+            count:
+              type: integer
+              description: Total number of reservations returned
+            error:
+              type: string
+              description: Error message (if failed)
+        examples:
+          success:
+            success: true
+            reservations:
+              - ip-address: "192.168.1.10"
+                hw-address: "aa:bb:cc:dd:ee:ff"
+                hostname: "server1"
+                subnet-id: 1
+            count: 1
+      500:
+        description: Internal server error
+    """
     try:
         client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
@@ -245,7 +456,74 @@ def get_reservations():
 
 @app.route('/api/reservations', methods=['POST'])
 def create_reservation():
-    """Create a new DHCP reservation"""
+    """Create a new DHCP reservation
+    ---
+    tags:
+      - Reservations
+    summary: Create a new DHCP reservation
+    description: Creates a permanent DHCP reservation for a specific IP and MAC address combination.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        description: Reservation details
+        schema:
+          type: object
+          required:
+            - ip_address
+            - hw_address
+          properties:
+            ip_address:
+              type: string
+              description: IP address to reserve
+              example: "192.168.1.100"
+            hw_address:
+              type: string
+              description: MAC address to bind to the reservation
+              example: "aa:bb:cc:dd:ee:ff"
+            hostname:
+              type: string
+              description: Hostname for the reservation (optional)
+              example: "server1"
+            subnet_id:
+              type: integer
+              description: Subnet ID (optional, uses default if not specified)
+              example: 1
+    responses:
+      200:
+        description: Reservation created successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the operation succeeded
+            message:
+              type: string
+              description: Success message
+            reservation:
+              type: object
+              description: Details of the created reservation
+        examples:
+          success:
+            success: true
+            message: "Successfully created reservation for 192.168.1.100"
+            reservation:
+              ip-address: "192.168.1.100"
+              hw-address: "aa:bb:cc:dd:ee:ff"
+              hostname: "server1"
+      400:
+        description: Bad request - missing required fields
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            error:
+              type: string
+      500:
+        description: Internal server error
+    """
     try:
         client = get_kea_client()
         data = request.get_json()
@@ -292,7 +570,78 @@ def create_reservation():
 
 @app.route('/api/promote', methods=['POST'])
 def promote_lease():
-    """Promote a lease to a permanent reservation"""
+    """Promote a lease to a permanent reservation
+    ---
+    tags:
+      - Leases
+      - Reservations
+    summary: Promote an active lease to a permanent reservation
+    description: |
+      Converts an active DHCP lease into a permanent reservation. This ensures the same IP address
+      will always be assigned to the specified MAC address. Includes duplicate checking to prevent
+      overwriting existing reservations.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        description: Lease details to promote
+        schema:
+          type: object
+          required:
+            - ip_address
+            - hw_address
+          properties:
+            ip_address:
+              type: string
+              description: IP address from the active lease
+              example: "192.168.1.100"
+            hw_address:
+              type: string
+              description: MAC address from the active lease
+              example: "aa:bb:cc:dd:ee:01"
+            hostname:
+              type: string
+              description: Hostname from the lease (optional)
+              example: "client1"
+            subnet_id:
+              type: integer
+              description: Subnet ID (optional)
+              example: 1
+    responses:
+      200:
+        description: Lease promoted successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the operation succeeded
+            message:
+              type: string
+              description: Success message
+            reservation:
+              type: object
+              description: Details of the created reservation
+        examples:
+          success:
+            success: true
+            message: "Successfully promoted 192.168.1.100 to reservation"
+      400:
+        description: Bad request - missing fields or reservation already exists
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            error:
+              type: string
+        examples:
+          duplicate:
+            success: false
+            error: "A reservation already exists for IP 192.168.1.100. Please choose a different IP address."
+      500:
+        description: Internal server error
+    """
     try:
         client = get_kea_client()
         data = request.get_json()
@@ -354,7 +703,53 @@ def promote_lease():
 
 @app.route('/api/subnets', methods=['GET'])
 def get_subnets():
-    """Fetch configured subnets"""
+    """Fetch configured subnets
+    ---
+    tags:
+      - Subnets
+    summary: Get configured DHCP subnets
+    description: Retrieves all configured subnets from the KEA DHCP server with their network ranges and settings.
+    responses:
+      200:
+        description: Subnets retrieved successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the operation succeeded
+            subnets:
+              type: array
+              description: List of configured subnets
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    description: Subnet ID
+                  subnet:
+                    type: string
+                    description: Subnet CIDR notation
+                  pools:
+                    type: array
+                    description: IP address pools
+            unconfigured:
+              type: boolean
+              description: True if KEA server is not configured
+            error:
+              type: string
+              description: Error message (if failed)
+        examples:
+          success:
+            success: true
+            subnets:
+              - id: 1
+                subnet: "192.168.1.0/24"
+                pools:
+                  - pool: "192.168.1.100 - 192.168.1.200"
+      500:
+        description: Internal server error
+    """
     # Check if configuration is valid first
     if not is_config_valid():
         return jsonify({
@@ -381,14 +776,66 @@ def get_subnets():
 
 @app.route('/api/validate-ip', methods=['POST'])
 def validate_ip():
-    """
-    Validate if an IP address belongs to a subnet
-    
-    Expected JSON body:
-    {
-        "ip_address": "192.168.1.100",
-        "subnet_id": 1
-    }
+    """Validate if an IP address belongs to a subnet
+    ---
+    tags:
+      - Subnets
+    summary: Validate IP address against subnet
+    description: |
+      Checks if an IP address is valid for a specific subnet. Validates that:
+      - IP is within the subnet range
+      - IP is not the network address
+      - IP is not the broadcast address
+    parameters:
+      - name: body
+        in: body
+        required: true
+        description: IP address and subnet to validate
+        schema:
+          type: object
+          required:
+            - ip_address
+          properties:
+            ip_address:
+              type: string
+              description: IP address to validate
+              example: "192.168.1.100"
+            subnet_id:
+              type: integer
+              description: Subnet ID to validate against
+              example: 1
+    responses:
+      200:
+        description: Validation completed
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the validation check completed
+            valid:
+              type: boolean
+              description: Whether the IP is valid for the subnet
+            subnet:
+              type: string
+              description: Subnet CIDR that was checked
+            error:
+              type: string
+              description: Error message if invalid
+        examples:
+          valid:
+            success: true
+            valid: true
+            subnet: "192.168.1.0/24"
+          invalid:
+            success: true
+            valid: false
+            error: "IP 192.168.1.255 is the broadcast address and cannot be used"
+            subnet: "192.168.1.0/24"
+      400:
+        description: Bad request - missing required fields or subnet not found
+      500:
+        description: Internal server error
     """
     try:
         data = request.get_json()
@@ -486,7 +933,55 @@ def validate_ip():
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
-    """Get current configuration (sanitized)"""
+    """Get current configuration (sanitized)
+    ---
+    tags:
+      - Configuration
+    summary: Get current application configuration
+    description: Retrieves the current configuration settings. Passwords are sanitized (masked) in the response.
+    responses:
+      200:
+        description: Configuration retrieved successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Whether the operation succeeded
+            config:
+              type: object
+              description: Current configuration (with password masked)
+              properties:
+                kea:
+                  type: object
+                  properties:
+                    control_agent_url:
+                      type: string
+                    username:
+                      type: string
+                    password:
+                      type: string
+                      description: Masked as '***' if set
+                    default_subnet_id:
+                      type: integer
+                app:
+                  type: object
+                  properties:
+                    host:
+                      type: string
+                    port:
+                      type: integer
+                    debug:
+                      type: boolean
+            config_path:
+              type: string
+              description: Path to the configuration file
+            config_exists:
+              type: boolean
+              description: Whether the config file exists on disk
+      500:
+        description: Internal server error
+    """
     try:
         # Load current config from file
         current_config = load_config()
@@ -518,7 +1013,77 @@ def get_config():
 
 @app.route('/api/config', methods=['POST'])
 def save_config():
-    """Save configuration to file"""
+    """Save configuration to file
+    ---
+    tags:
+      - Configuration
+    summary: Save application configuration
+    description: |
+      Updates and saves the application configuration to disk. All workers will immediately use the new configuration.
+      If the password field is '***', the existing password is preserved.
+    parameters:
+      - name: body
+        in: body
+        required: true
+        description: New configuration to save
+        schema:
+          type: object
+          required:
+            - config
+          properties:
+            config:
+              type: object
+              required:
+                - kea
+                - app
+              properties:
+                kea:
+                  type: object
+                  properties:
+                    control_agent_url:
+                      type: string
+                      example: "http://kea-server:8000"
+                    username:
+                      type: string
+                      example: "admin"
+                    password:
+                      type: string
+                      description: Use '***' to keep existing password
+                      example: "password123"
+                    default_subnet_id:
+                      type: integer
+                      example: 1
+                app:
+                  type: object
+                  properties:
+                    host:
+                      type: string
+                      example: "0.0.0.0"
+                    port:
+                      type: integer
+                      example: 5000
+                    debug:
+                      type: boolean
+                      example: false
+    responses:
+      200:
+        description: Configuration saved successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+        examples:
+          success:
+            success: true
+            message: "Configuration saved successfully. All workers will use the new config immediately."
+      400:
+        description: Bad request - invalid or incomplete configuration
+      500:
+        description: Internal server error
+    """
     global config, _config_cache
     
     try:
@@ -578,7 +1143,42 @@ def save_config():
 
 @app.route('/api/reservation/<ip_address>', methods=['DELETE'])
 def delete_reservation(ip_address):
-    """Delete a reservation"""
+    """Delete a reservation
+    ---
+    tags:
+      - Reservations
+    summary: Delete a DHCP reservation
+    description: Removes a permanent DHCP reservation for the specified IP address.
+    parameters:
+      - name: ip_address
+        in: path
+        type: string
+        required: true
+        description: IP address of the reservation to delete
+        example: "192.168.1.100"
+      - name: subnet_id
+        in: query
+        type: integer
+        required: false
+        description: Subnet ID (optional)
+        example: 1
+    responses:
+      200:
+        description: Reservation deleted successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+        examples:
+          success:
+            success: true
+            message: "Successfully deleted reservation for 192.168.1.100"
+      500:
+        description: Internal server error
+    """
     try:
         client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
@@ -597,7 +1197,57 @@ def delete_reservation(ip_address):
 
 @app.route('/api/reservations/export', methods=['GET'])
 def export_reservations():
-    """Export all DHCP reservations to JSON file"""
+    """Export all DHCP reservations to JSON file
+    ---
+    tags:
+      - Reservations
+    summary: Export reservations to JSON file
+    description: |
+      Downloads all DHCP reservations as a JSON file. The file includes metadata (export date, count)
+      and can be used for backup or importing to another system.
+    parameters:
+      - name: subnet_id
+        in: query
+        type: integer
+        required: false
+        description: Filter reservations by subnet ID
+        example: 1
+    produces:
+      - application/json
+    responses:
+      200:
+        description: JSON file download containing all reservations
+        headers:
+          Content-Disposition:
+            type: string
+            description: "attachment; filename=dhcp_reservations_export.json"
+        schema:
+          type: object
+          properties:
+            export_date:
+              type: string
+              format: date-time
+              description: ISO timestamp of export
+            total_count:
+              type: integer
+              description: Number of reservations exported
+            reservations:
+              type: array
+              description: List of all reservations
+              items:
+                type: object
+                properties:
+                  ip-address:
+                    type: string
+                  hw-address:
+                    type: string
+                  hostname:
+                    type: string
+                  subnet-id:
+                    type: integer
+      500:
+        description: Internal server error
+    """
     try:
         client = get_kea_client()
         subnet_id = request.args.get('subnet_id', type=int)
@@ -630,7 +1280,100 @@ def export_reservations():
 
 @app.route('/api/reservations/import', methods=['POST'])
 def import_reservations():
-    """Import DHCP reservations from uploaded JSON file"""
+    """Import DHCP reservations from uploaded JSON file
+    ---
+    tags:
+      - Reservations
+    summary: Import reservations from JSON file
+    description: |
+      Bulk import DHCP reservations from an uploaded JSON file. The import process:
+      - Validates each reservation before creating it
+      - Continues processing even if individual reservations fail
+      - Returns a detailed summary of successes and failures
+
+      Accepts JSON in two formats:
+      1. Object with 'reservations' array: `{"reservations": [...]}`
+      2. Direct array of reservations: `[...]`
+
+      Common failure reasons:
+      - Duplicate IP addresses (reservation already exists)
+      - IP addresses outside subnet range
+      - Invalid MAC addresses
+      - Missing required fields (ip-address, hw-address)
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: file
+        in: formData
+        type: file
+        required: true
+        description: JSON file containing reservations to import
+    responses:
+      200:
+        description: Import completed (may include partial failures)
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              description: Overall import process succeeded
+            total:
+              type: integer
+              description: Total number of reservations in file
+            success_count:
+              type: integer
+              description: Number of successfully imported reservations
+            failed_count:
+              type: integer
+              description: Number of failed imports
+            message:
+              type: string
+              description: Summary message
+            failed_items:
+              type: array
+              description: Details of failed imports (if any)
+              items:
+                type: object
+                properties:
+                  index:
+                    type: integer
+                    description: Line number in import file
+                  ip:
+                    type: string
+                    description: IP address that failed
+                  mac:
+                    type: string
+                    description: MAC address (if available)
+                  error:
+                    type: string
+                    description: Error message
+            hint:
+              type: string
+              description: Troubleshooting hint (if failures occurred)
+        examples:
+          complete_success:
+            success: true
+            total: 10
+            success_count: 10
+            failed_count: 0
+            message: "10 reservation(s) imported successfully. 0 reservation(s) failed to import."
+          partial_success:
+            success: true
+            total: 10
+            success_count: 8
+            failed_count: 2
+            message: "8 reservation(s) imported successfully. 2 reservation(s) failed to import."
+            failed_items:
+              - index: 3
+                ip: "192.168.1.50"
+                mac: "aa:bb:cc:dd:ee:03"
+                error: "Reservation already exists for this IP"
+            hint: "Check if you have duplicates or reservations outside the subnet range."
+      400:
+        description: Bad request - no file provided or invalid JSON format
+      500:
+        description: Internal server error
+    """
     try:
         # Check if file is present
         if 'file' not in request.files:
